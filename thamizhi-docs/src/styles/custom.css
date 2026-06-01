@@ -1,0 +1,38 @@
+@layer starlight, black, my-overrides;
+
+@layer my-overrides {
+  /* Light theme only — hide the theme toggle. */
+  starlight-theme-black-select,
+  starlight-theme-select {
+    display: none !important;
+  }
+
+  .logo-size {
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+  }
+
+  .site-title {
+    color: var(--foreground);
+  }
+
+  .title-text {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  .container-wrapper-main {
+    grid-template-columns: 260px minmax(0, 1fr) !important;
+  }
+
+  @media (min-width: 1280px) {
+    .container-wrapper-main {
+      grid-template-columns: 280px minmax(0, 1fr) !important;
+    }
+  }
+}

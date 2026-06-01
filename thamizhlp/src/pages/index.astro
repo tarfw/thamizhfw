@@ -1,0 +1,161 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Asterisk from '../components/Asterisk.astro';
+---
+
+<Layout
+  title="thamizh"
+  description="Tamil social, Tamil journalism. Two apps, in your script."
+>
+
+  <header class="site-header" id="siteHeader">
+    <a href="#top" class="brand" aria-label="thamizh home">
+      <Asterisk class="brand-mark" />
+      <span class="brand-text">thamizh</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="#apps">Apps</a>
+    </nav>
+  </header>
+
+  <a id="top"></a>
+
+  <main>
+    <!-- HERO -->
+    <section class="hero" aria-label="thamizh">
+      <div class="hero-mark" aria-hidden="true">
+        <Asterisk class="hero-mark-inner" />
+      </div>
+
+      <h1 class="hero-title">thamizh</h1>
+      <p class="hero-tag">A social home and a news home, built for Tamil.</p>
+      <span class="hero-rule" aria-hidden="true"></span>
+
+      <div class="hero-foot">
+        <span><span class="pulse" aria-hidden="true"></span> Now building</span>
+        <span>Tamil · தமிழ்</span>
+      </div>
+    </section>
+
+    <!-- APPS -->
+    <section class="apps" id="apps" aria-label="Apps">
+      <div class="container">
+        <div class="apps-grid">
+          <article class="app">
+            <div class="app-head">
+              <span class="app-num">01</span>
+              <a href="https://daodocs.thamizh.app" class="app-arrow" aria-label="thamizh docs">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M3 9L9 3M9 3H4M9 3V8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </a>
+            </div>
+
+            <span class="app-mark" aria-hidden="true">
+              <Asterisk class="app-mark-inner" />
+            </span>
+
+            <h2 class="app-name">thamizh</h2>
+            <p class="app-tag">Social. Federated. Built for Tamil conversation.</p>
+
+            <a href="https://daodocs.thamizh.app" class="app-link">thamizhdao →</a>
+
+            <div class="app-meta">
+              <div class="app-meta-row">
+                <span>Platform</span>
+                <span class="v">iOS · Android · Web</span>
+              </div>
+              <div class="app-meta-row">
+                <span>Status</span>
+                <span class="v">In development</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="app">
+            <div class="app-head">
+              <span class="app-num">02</span>
+              <a href="https://dpressdocs.thamizh.app" class="app-arrow" aria-label="thamizhi docs">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M3 9L9 3M9 3H4M9 3V8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </a>
+            </div>
+
+            <span class="app-mark" aria-hidden="true">
+              <Asterisk class="app-mark-inner" />
+            </span>
+
+            <h2 class="app-name">thamizhi</h2>
+            <p class="app-tag">Journalism. Citizen-sourced, in Tamil.</p>
+
+            <a href="https://dpressdocs.thamizh.app" class="app-link">thamizhi-docs →</a>
+
+            <div class="app-meta">
+              <div class="app-meta-row">
+                <span>Platform</span>
+                <span class="v">Web · iOS · Android</span>
+              </div>
+              <div class="app-meta-row">
+                <span>Status</span>
+                <span class="v">In development</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- SOVEREIGNTY -->
+    <section class="sovereignty" aria-label="Sovereignty">
+      <div class="sov-bg" aria-hidden="true">
+        <Asterisk class="sov-bg-mark" />
+      </div>
+      <div class="container">
+        <div class="sov-grid">
+          <div class="sov-marker" aria-hidden="true">
+            <span class="sov-num">ii</span>
+          </div>
+          <div class="sov-body">
+            <ul class="sov-terms">
+              <li class="sov-term">Sovereign<span class="dot">.</span></li>
+              <li class="sov-term">Decentralized<span class="dot">.</span></li>
+              <li class="sov-term">People-owned<span class="dot">.</span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="sov-close">
+          <a href="#top" class="sov-brand" aria-label="thamizh home">
+            <Asterisk class="sov-brand-mark" />
+            <span>thamizh</span>
+          </a>
+          <span class="sov-brand-lang">Tamil · தமிழ்</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const header = document.getElementById('siteHeader');
+    if (header) {
+      const onScroll = () => {
+        if (window.scrollY > 24) header.classList.add('scrolled');
+        else header.classList.remove('scrolled');
+      };
+      document.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+    }
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -6% 0px' });
+
+    document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+  </script>
+
+</Layout>

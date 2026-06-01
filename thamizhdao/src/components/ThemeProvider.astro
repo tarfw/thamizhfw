@@ -1,0 +1,21 @@
+---
+---
+
+<script is:inline>
+	// Light theme only — force data-theme="light" and prevent any script from changing it.
+	try { localStorage.removeItem('starlight-theme'); } catch (e) {}
+	document.documentElement.dataset.theme = 'light';
+
+	new MutationObserver(function () {
+		if (document.documentElement.dataset.theme !== 'light') {
+			document.documentElement.dataset.theme = 'light';
+		}
+	}).observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ['data-theme'],
+	});
+
+	window.StarlightThemeProvider = {
+		updatePickers: function () {},
+	};
+</script>
