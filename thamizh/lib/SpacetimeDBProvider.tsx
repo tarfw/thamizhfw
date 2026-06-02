@@ -11,14 +11,13 @@ export type ConnectionInfo = {
   error: string | null;
 };
 
-let _started = false;
-
 export function useSpacetimeDB() {
   const [conn, setConn] = useState<ConnectionInfo>(getConnectionState);
   const [users, setUsers] = useState<readonly User[]>(getUsers);
   const [messages, setMessages] = useState<readonly Message[]>(getMessages);
   const [groupChats, setGroupChats] = useState<readonly GroupChat[]>(getGroupChats);
   const [groupMembers, setGroupMembers] = useState<readonly GroupMember[]>(getGroupMembers);
+  const [retry, setRetry] = useState(0);
 
   const refresh = useCallback(() => {
     const nextConn = getConnectionState();
@@ -49,17 +48,21 @@ export function useSpacetimeDB() {
   }, []);
 
   useEffect(() => {
-    if (!_started) {
-      _started = true;
-      ensureConnected().catch((err) => {
+    let cancelled = false;
+    ensureConnected()
+      .then(() => {
+        if (!cancelled) setRetry(0);
+      })
+      .catch((err) => {
         console.error("[SpacetimeDBProvider] connect failed:", err);
-        _started = false;
+        if (!cancelled) {
+          setTimeout(() => setRetry((r) => r + 1), 2000);
+        }
       });
-    }
     const unsub = subscribe(refresh);
     refresh();
-    return unsub;
-  }, [refresh]);
+    return () => { cancelled = true; unsub(); };
+  }, [refresh, retry]);
 
   return { conn, users, messages, groupChats, groupMembers };
 }

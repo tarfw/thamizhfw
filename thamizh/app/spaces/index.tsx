@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import {
   ActivityIndicator,
   Modal,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -65,7 +66,7 @@ type Row = {
   messages: { id: string; body: string; createdAt: number }[];
 };
 
-type Tab = "feed" | "chats" | "spaces";
+type Tab = "feed" | "chats" | "spaces" | "apps";
 
 const EELAM_CONSTITUENCIES: Row[] = [
   {
@@ -635,7 +636,7 @@ export default function ConstituenciesIndex() {
             );
           }}
         />
-      ) : (
+      ) : tab === "spaces" ? (
         <FlashList
           data={ordered}
           keyExtractor={(r) => r.id}
@@ -665,7 +666,64 @@ export default function ConstituenciesIndex() {
             />
           )}
         />
-      )}
+      ) : null}
+
+      {/* Apps tab */}
+      {tab === "apps" ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 24 }}
+        >
+          <Pressable
+            onPress={() => router.push("/agarathi" as any)}
+            style={({ pressed }) => ({
+              backgroundColor: pressed ? SURFACE_HOVER : SURFACE_ALT,
+              borderRadius: 16,
+              padding: 20,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 16,
+              marginBottom: 12,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: ACCENT_SOFT, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="book" size={24} color={ACCENT} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 17, fontWeight: "700", color: TEXT, marginBottom: 2 }}>Agarathi</Text>
+              <Text style={{ fontSize: 13, color: MUTED, lineHeight: 18 }}>
+                Tamil dictionary powered by Sorkuvai — search any word for definitions, meanings and more.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={MUTED} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push("/tamil-tokenizer" as any)}
+            style={({ pressed }) => ({
+              backgroundColor: pressed ? SURFACE_HOVER : SURFACE_ALT,
+              borderRadius: 16,
+              padding: 20,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 16,
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: ACCENT_SOFT, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="text" size={24} color={ACCENT} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 17, fontWeight: "700", color: TEXT, marginBottom: 2 }}>Tamil Tokenizer</Text>
+              <Text style={{ fontSize: 13, color: MUTED, lineHeight: 18 }}>
+                Split Tamil text into tokens, analyze syllables, and explore word structure.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={MUTED} />
+          </Pressable>
+        </ScrollView>
+      ) : null}
 
       {/* New Message button (chats tab) */}
       {tab === "chats" ? (
@@ -725,6 +783,15 @@ export default function ConstituenciesIndex() {
           onPress={() => {
             if (tab !== "feed") setQuery("");
             setTab("feed");
+          }}
+        />
+        <NavButton
+          label="Apps"
+          icon={tab === "apps" ? "apps" : "apps-outline"}
+          active={tab === "apps"}
+          onPress={() => {
+            if (tab !== "apps") setQuery("");
+            setTab("apps");
           }}
         />
         <NavButton

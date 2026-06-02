@@ -31,6 +31,17 @@ let messagesSnapshot: readonly Message[] = [];
 let groupChatsSnapshot: readonly GroupChat[] = [];
 let groupMembersSnapshot: readonly GroupMember[] = [];
 
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const msg = (err as any).message ?? (err as any).description ?? "";
+    if (msg) return String(msg);
+    try { return JSON.stringify(err); } catch { return String(err); }
+  }
+  return String(err);
+}
+
 function refreshConnectionSnapshot() {
   connectionStateSnapshot = {
     isActive,
@@ -172,6 +183,7 @@ export async function ensureConnected(): Promise<void> {
         identityRef = ident as any;
         identityHex = (ident as any).toHexString();
         isActive = true;
+        connectError = null;
         AsyncStorage.setItem(TOKEN_KEY, tok).catch(() => {});
         refreshConnectionSnapshot();
         notify();
@@ -183,6 +195,7 @@ export async function ensureConnected(): Promise<void> {
         identityRef = null;
         identityHex = null;
         tablesReady = false;
+        initPromise = null;
         usersSnapshot = [];
         messagesSnapshot = [];
         groupChatsSnapshot = [];
@@ -191,8 +204,9 @@ export async function ensureConnected(): Promise<void> {
         if (wasActive) notify();
       })
       .onConnectError((_ctx, err) => {
-        console.error("[db] onConnectError fired:", err);
-        connectError = err instanceof Error ? err.message : String(err);
+        const msg = formatError(err);
+        console.error("[db] onConnectError fired:", msg);
+        connectError = msg;
         refreshConnectionSnapshot();
         notify();
       });
@@ -212,12 +226,10 @@ export async function ensureConnected(): Promise<void> {
         if (connection!.isActive) {
           console.log("[db] connection became active");
           resolve();
-        } else if (connectError) {
-          console.error("[db] connectError detected:", connectError);
-          reject(new Error(`SpacetimeDB connect failed: ${connectError}`));
         } else if (Date.now() > deadline) {
-          console.error("[db] connection timed out after 15s");
-          reject(new Error(`SpacetimeDB connect timed out after 15s (host=${HOST}, db=${DB_NAME})`));
+          const hint = connectError ? ` (last error: ${connectError})` : "";
+          console.error(`[db] connection timed out after 15s${hint}`);
+          reject(new Error(`SpacetimeDB connect timed out after 15s (host=${HOST}, db=${DB_NAME})${hint}`));
         } else {
           setTimeout(check, 100);
         }
@@ -253,8 +265,9 @@ export async function ensureConnected(): Promise<void> {
       if (typeof subBuilder.onError === "function") {
         subBuilder.onError((_ctx: unknown, err: unknown) => {
           clearTimeout(deadline);
-          console.error("[db] subscription onError fired:", err);
-          reject(new Error(`SpacetimeDB subscription failed: ${err instanceof Error ? err.message : String(err)}`));
+          const msg = formatError(err);
+          console.error("[db] subscription onError fired:", msg);
+          reject(new Error(`SpacetimeDB subscription failed: ${msg}`));
         });
       }
 
@@ -270,8 +283,9 @@ export async function ensureConnected(): Promise<void> {
 
     console.log("[db] ensureConnected completed successfully");
   })().catch((err) => {
-    console.error("[db] ensureConnected failed:", err);
-    connectError = err instanceof Error ? err.message : String(err);
+    const msg = formatError(err);
+    console.error("[db] ensureConnected failed:", msg);
+    connectError = msg;
     refreshConnectionSnapshot();
     notify();
     initPromise = null;

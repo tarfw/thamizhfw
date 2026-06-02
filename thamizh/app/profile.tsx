@@ -251,9 +251,9 @@ export default function ProfileScreen() {
     try {
       await signOutBluesky();
       await disconnect();
-      router.replace("/sign-in");
+      router.replace("/sign-in?reconnect=bluesky");
     } catch {
-      router.replace("/sign-in");
+      router.replace("/sign-in?reconnect=bluesky");
     } finally {
       setSigningOut(false);
     }

@@ -86,6 +86,8 @@ export default function RootLayout() {
               <Stack.Screen name="chats/groups/[id]/index" options={{ headerShown: false }} />
               <Stack.Screen name="chats/groups/[id]/invite" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
+              <Stack.Screen name="agarathi" options={{ headerShown: false }} />
+              <Stack.Screen name="tamil-tokenizer" options={{ headerShown: false }} />
             </Stack>
 
           <StatusBar style="dark" />
