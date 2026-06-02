@@ -32,12 +32,51 @@ export type BskyPostImage = {
   alt: string;
 };
 
+export type BskyPostFacet = {
+  index: { byteStart: number; byteEnd: number };
+  features: Array<
+    | { $type: "app.bsky.richtext.facet#mention"; did: string }
+    | { $type: "app.bsky.richtext.facet#link"; uri: string }
+    | { $type: "app.bsky.richtext.facet#tag"; tag: string }
+  >;
+};
+
+export type BskyPostRecord = {
+  text: string;
+  facets?: BskyPostFacet[];
+  createdAt?: string;
+  reply?: { parent?: { uri?: string }; root?: { uri?: string } };
+};
+
+export type BskyEmbedExternal = {
+  uri: string;
+  title?: string;
+  description?: string;
+  thumb?: string;
+};
+
+export type BskyEmbedRecord = {
+  uri: string;
+  cid?: string;
+  author?: BskyPostAuthor;
+  value?: { text?: string; createdAt?: string };
+};
+
+export type BskyEmbed = {
+  images?: BskyPostImage[];
+  external?: BskyEmbedExternal;
+  record?: BskyEmbedRecord;
+};
+
 export type BskyFeedItem = {
   uri: string;
   cid: string;
   indexedAt: string;
   author: BskyPostAuthor;
   text: string;
+  record?: BskyPostRecord;
+  embed?: BskyEmbed;
+  facets?: BskyPostFacet[];
   isReply: boolean;
   isRepost: boolean;
   repostedBy: { handle: string; displayName: string } | null;
@@ -113,7 +152,8 @@ function mapFeedView(view: any): BskyFeedItem | null {
   if (!post) return null;
 
   const record = post.record ?? {};
-  const embedImages = (post.embed?.images ?? []) as any[];
+  const rawEmbed = post.embed ?? {};
+  const embedImages = (rawEmbed.images ?? []) as any[];
 
   const reposter = view?.reason?.by;
 
@@ -128,6 +168,53 @@ function mapFeedView(view: any): BskyFeedItem | null {
       avatar: post.author?.avatar ?? null,
     },
     text: record.text ?? "",
+    record: {
+      text: record.text ?? "",
+      facets: record.facets,
+      createdAt: record.createdAt,
+      reply: record.reply,
+    },
+    embed: {
+      images: embedImages.length
+        ? embedImages.map((i) => ({
+            thumb: i.thumb,
+            fullsize: i.fullsize,
+            alt: i.alt ?? "",
+          }))
+        : undefined,
+      external: rawEmbed.external
+        ? {
+            uri: rawEmbed.external.uri,
+            title: rawEmbed.external.title,
+            description: rawEmbed.external.description,
+            thumb: rawEmbed.external.thumb,
+          }
+        : undefined,
+      record: rawEmbed.record
+        ? {
+            uri: rawEmbed.record.uri,
+            cid: rawEmbed.record.cid,
+            author: rawEmbed.record.author
+              ? {
+                  did: rawEmbed.record.author.did ?? "",
+                  handle: rawEmbed.record.author.handle ?? "",
+                  displayName:
+                    rawEmbed.record.author.displayName ??
+                    rawEmbed.record.author.handle ??
+                    "",
+                  avatar: rawEmbed.record.author.avatar ?? null,
+                }
+              : undefined,
+            value: rawEmbed.record.value
+              ? {
+                  text: rawEmbed.record.value.text,
+                  createdAt: rawEmbed.record.value.createdAt,
+                }
+              : undefined,
+          }
+        : undefined,
+    },
+    facets: record.facets,
     isReply: !!record.reply,
     isRepost: !!reposter,
     repostedBy: reposter

@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, Redirect } from "expo-router";
 import { useMemo } from "react";
-import { FlatList, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Pressable } from "@/lib/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSpacetimeDB } from "@/lib/SpacetimeDBProvider";
@@ -47,7 +48,7 @@ export default function GroupChatList() {
           <Ionicons name="add" size={24} color={ACCENT} />
         </Pressable>
       </View>
-      <FlatList
+      <FlashList
         data={myGroups}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}

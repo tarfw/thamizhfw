@@ -1,22 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, Redirect } from "expo-router";
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import * as Haptics from "expo-haptics";
 import {
   ActivityIndicator,
+  Clipboard,
   FlatList,
-  Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   Text,
   TextInput,
   View,
-  Platform,
-  Clipboard,
-  Linking,
 } from "react-native";
+import { Image } from "expo-image";
 import { Pressable } from "@/lib/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { disconnect } from "@/lib/db";
@@ -30,6 +30,12 @@ import {
   type BskyProfile,
   type BskyFeedItem,
 } from "@/lib/bluesky-api";
+import {
+  renderRichText,
+  ExternalLinkCard,
+  ImageGrid,
+  QuotedPostCard,
+} from "@/lib/bskyPostRender";
 import Avatar from "@/lib/Avatar";
 import {
   ACCENT,
@@ -119,24 +125,40 @@ export default function ProfileScreen() {
       const p = await fetchMyProfile();
       setBskyProfile(p);
     } catch (e: any) {
-      setProfileError(e?.message ?? "Failed to load profile");
+      const msg = e?.message ?? "";
+      setProfileError(msg);
+      if (/not signed in/i.test(msg)) {
+        router.replace("/sign-in?reconnect=bluesky");
+        return;
+      }
     } finally {
       setLoadingProfile(false);
     }
-  }, []);
+  }, [router]);
+
+  const dedupeByUri = (feed: BskyFeedItem[]): BskyFeedItem[] => {
+    const seen = new Set<string>();
+    const out: BskyFeedItem[] = [];
+    for (const p of feed) {
+      if (!p?.uri || seen.has(p.uri)) continue;
+      seen.add(p.uri);
+      out.push(p);
+    }
+    return out;
+  };
 
   const loadTab = useCallback(async (tab: TabKey) => {
     setFeedLoading(true);
     try {
       if (tab === "posts") {
-        setPosts(await fetchAuthorFeed("posts_no_replies", 50));
+        setPosts(dedupeByUri(await fetchAuthorFeed("posts_no_replies", 50)));
       } else if (tab === "replies") {
         const feed = await fetchAuthorFeed("posts_with_replies", 50);
-        setReplies(feed.filter((p) => p.isReply));
+        setReplies(dedupeByUri(feed.filter((p) => p.isReply)));
       } else if (tab === "media") {
-        setMedia(await fetchAuthorFeed("posts_with_media", 50));
+        setMedia(dedupeByUri(await fetchAuthorFeed("posts_with_media", 50)));
       } else if (tab === "likes") {
-        setLikes(await fetchMyLikes(50));
+        setLikes(dedupeByUri(await fetchMyLikes(50)));
       }
     } catch {
       // soft-fail; the per-tab list just stays empty
@@ -158,6 +180,11 @@ export default function ProfileScreen() {
     await Promise.all([loadProfile(), loadTab(activeTab)]);
     setRefreshing(false);
   }, [loadProfile, loadTab, activeTab]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: BskyFeedItem }) => <PostRow item={item} />,
+    []
+  );
 
   const copyDid = () => {
     if (!bskyProfile) return;
@@ -209,7 +236,6 @@ export default function ProfileScreen() {
         displayName: name || bskyProfile.handle,
         description: bio,
       });
-      // Re-fetch in the background so server-side normalizations land.
       loadProfile();
       setIsEditing(false);
     } catch (e: any) {
@@ -317,24 +343,352 @@ export default function ProfileScreen() {
       ? media
       : likes;
 
-  const emptyMessages: Record<TabKey, { icon: keyof typeof Ionicons.glyphMap; text: string }> = {
-    posts: {
-      icon: "chatbubbles-outline",
-      text: "No posts yet.",
-    },
-    replies: {
-      icon: "return-down-back-outline",
-      text: "No replies yet.",
-    },
-    media: {
-      icon: "image-outline",
-      text: "No media posts yet.",
-    },
-    likes: {
-      icon: "heart-outline",
-      text: "No likes yet.",
-    },
+  const emptyMessages: Record<
+    TabKey,
+    { icon: keyof typeof Ionicons.glyphMap; text: string }
+  > = {
+    posts: { icon: "chatbubbles-outline", text: "No posts yet." },
+    replies: { icon: "return-down-back-outline", text: "No replies yet." },
+    media: { icon: "image-outline", text: "No media posts yet." },
+    likes: { icon: "heart-outline", text: "No likes yet." },
   };
+
+  const headerComponent = (
+    <View style={{ backgroundColor: "white" }}>
+      {/* Banner */}
+      <View
+        style={{
+          height: 150,
+          backgroundColor: ACCENT_SOFT,
+          position: "relative",
+        }}
+      >
+        {bskyProfile.banner ? (
+          <Image
+            source={{ uri: bskyProfile.banner }}
+            style={{ width: "100%", height: "100%" }}
+            contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
+          />
+        ) : null}
+
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+              () => {}
+            );
+            router.back();
+          }}
+          hitSlop={8}
+          style={({ pressed }) => ({
+            position: "absolute",
+            top: insets.top + 8,
+            left: 12,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: "rgba(0, 0, 0, 0.45)",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: pressed ? 0.75 : 1,
+            zIndex: 10,
+          })}
+        >
+          <Ionicons name="arrow-back" size={20} color="white" />
+        </Pressable>
+
+        <View
+          style={{
+            position: "absolute",
+            top: insets.top + 8,
+            right: 12,
+            flexDirection: "row",
+            gap: 8,
+            zIndex: 10,
+          }}
+        >
+          <Pressable
+            onPress={openOnBluesky}
+            hitSlop={8}
+            style={({ pressed }) => ({
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: "rgba(0, 0, 0, 0.45)",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? 0.75 : 1,
+            })}
+          >
+            <Ionicons name="open-outline" size={18} color="white" />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+                () => {}
+              );
+              setShowDrawer(true);
+            }}
+            hitSlop={8}
+            style={({ pressed }) => ({
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: "rgba(0, 0, 0, 0.45)",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? 0.75 : 1,
+            })}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color="white" />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Profile header */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            marginTop: -48,
+            marginBottom: 12,
+          }}
+        >
+          {bskyProfile.avatar ? (
+            <Image
+              source={{ uri: bskyProfile.avatar }}
+              style={{
+                width: 92,
+                height: 92,
+                borderRadius: 46,
+                borderWidth: 4,
+                borderColor: "white",
+                backgroundColor: SURFACE_ALT,
+              }}
+              contentFit="cover"
+              transition={120}
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <Avatar
+              name={bskyProfile.displayName}
+              size={92}
+              seed={bskyProfile.did}
+              style={{ borderWidth: 4, borderColor: "white" }}
+            />
+          )}
+
+          <Pressable
+            onPress={openEdit}
+            style={({ pressed }) => ({
+              paddingHorizontal: 16,
+              height: 34,
+              borderRadius: 17,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: pressed ? "#1557b0" : ACCENT,
+              flexDirection: "row",
+            })}
+          >
+            <Ionicons
+              name="create-outline"
+              size={14}
+              color="white"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={{ fontSize: 14, fontWeight: "600", color: "white" }}>
+              Edit Profile
+            </Text>
+          </Pressable>
+        </View>
+
+        <Text
+          style={{
+            fontSize: 22,
+            fontWeight: "800",
+            color: TEXT,
+            letterSpacing: -0.4,
+          }}
+          numberOfLines={2}
+        >
+          {bskyProfile.displayName}
+        </Text>
+
+        <Text
+          style={{ fontSize: 14, color: MUTED, marginTop: 2 }}
+          numberOfLines={1}
+        >
+          @{bskyProfile.handle}
+        </Text>
+
+        {bskyProfile.description ? (
+          <Text
+            style={{
+              fontSize: 14,
+              color: TEXT_SECONDARY,
+              lineHeight: 20,
+              marginTop: 12,
+            }}
+          >
+            {bskyProfile.description}
+          </Text>
+        ) : null}
+
+        {bskyProfile.createdAt ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginTop: 10,
+            }}
+          >
+            <Ionicons
+              name="calendar-outline"
+              size={14}
+              color={MUTED}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={{ fontSize: 13, color: MUTED }}>
+              Joined {formatJoinDate(bskyProfile.createdAt)}
+            </Text>
+          </View>
+        ) : null}
+
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 20,
+            marginTop: 14,
+            flexWrap: "wrap",
+          }}
+        >
+          <Pressable
+            onPress={openOnBluesky}
+            hitSlop={4}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+          >
+            <Text style={{ fontSize: 14, color: TEXT_SECONDARY }}>
+              <Text style={{ fontWeight: "700", color: TEXT }}>
+                {formatCount(bskyProfile.followsCount)}
+              </Text>
+              {"  "}
+              <Text style={{ color: MUTED }}>following</Text>
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={openOnBluesky}
+            hitSlop={4}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+          >
+            <Text style={{ fontSize: 14, color: TEXT_SECONDARY }}>
+              <Text style={{ fontWeight: "700", color: TEXT }}>
+                {formatCount(bskyProfile.followersCount)}
+              </Text>
+              {"  "}
+              <Text style={{ color: MUTED }}>
+                {bskyProfile.followersCount === 1 ? "follower" : "followers"}
+              </Text>
+            </Text>
+          </Pressable>
+          <View>
+            <Text style={{ fontSize: 14, color: TEXT_SECONDARY }}>
+              <Text style={{ fontWeight: "700", color: TEXT }}>
+                {formatCount(bskyProfile.postsCount)}
+              </Text>
+              {"  "}
+              <Text style={{ color: MUTED }}>
+                {bskyProfile.postsCount === 1 ? "post" : "posts"}
+              </Text>
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Tab bar */}
+      <View
+        style={{
+          borderBottomWidth: 1,
+          borderBottomColor: HAIRLINE,
+          backgroundColor: "white",
+        }}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 8 }}
+        >
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  setActiveTab(tab.key);
+                }}
+                style={({ pressed }) => ({
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: isActive ? "700" : "500",
+                    color: isActive ? TEXT : MUTED,
+                  }}
+                >
+                  {tab.label}
+                </Text>
+                {isActive ? (
+                  <View
+                    style={{
+                      position: "absolute",
+                      left: 16,
+                      right: 16,
+                      bottom: 0,
+                      height: 3,
+                      backgroundColor: ACCENT,
+                      borderTopLeftRadius: 2,
+                      borderTopRightRadius: 2,
+                    }}
+                  />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  );
+
+  const emptyComponent = feedLoading ? (
+    <View style={{ paddingVertical: 48, alignItems: "center" }}>
+      <ActivityIndicator color={ACCENT} />
+    </View>
+  ) : (
+    <View
+      style={{
+        paddingVertical: 64,
+        paddingHorizontal: 32,
+        alignItems: "center",
+      }}
+    >
+      <Ionicons
+        name={emptyMessages[activeTab].icon}
+        size={36}
+        color={MUTED}
+        style={{ marginBottom: 12 }}
+      />
+      <Text style={{ fontSize: 13, color: MUTED, textAlign: "center" }}>
+        {emptyMessages[activeTab].text}
+      </Text>
+    </View>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: "white" }}>
@@ -343,6 +697,9 @@ export default function ProfileScreen() {
       <FlatList
         data={currentFeed}
         keyExtractor={(item) => item.uri}
+        renderItem={renderItem}
+        ListHeaderComponent={headerComponent}
+        ListEmptyComponent={emptyComponent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -350,360 +707,11 @@ export default function ProfileScreen() {
             tintColor={ACCENT}
           />
         }
-        stickyHeaderIndices={[0]}
-        ListHeaderComponent={
-          <View style={{ backgroundColor: "white" }}>
-            {/* Banner */}
-            <View
-              style={{
-                height: 150,
-                backgroundColor: ACCENT_SOFT,
-                position: "relative",
-              }}
-            >
-              {bskyProfile.banner ? (
-                <Image
-                  source={{ uri: bskyProfile.banner }}
-                  style={{ width: "100%", height: "100%" }}
-                  resizeMode="cover"
-                />
-              ) : null}
-
-              {/* Back */}
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(
-                    Haptics.ImpactFeedbackStyle.Light
-                  ).catch(() => {});
-                  router.back();
-                }}
-                hitSlop={8}
-                style={({ pressed }) => ({
-                  position: "absolute",
-                  top: insets.top + 8,
-                  left: 12,
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
-                  backgroundColor: "rgba(0, 0, 0, 0.45)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: pressed ? 0.75 : 1,
-                  zIndex: 10,
-                })}
-              >
-                <Ionicons name="arrow-back" size={20} color="white" />
-              </Pressable>
-
-              {/* Share + more */}
-              <View
-                style={{
-                  position: "absolute",
-                  top: insets.top + 8,
-                  right: 12,
-                  flexDirection: "row",
-                  gap: 8,
-                  zIndex: 10,
-                }}
-              >
-                <Pressable
-                  onPress={openOnBluesky}
-                  hitSlop={8}
-                  style={({ pressed }) => ({
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    backgroundColor: "rgba(0, 0, 0, 0.45)",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: pressed ? 0.75 : 1,
-                  })}
-                >
-                  <Ionicons name="open-outline" size={18} color="white" />
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(
-                      Haptics.ImpactFeedbackStyle.Light
-                    ).catch(() => {});
-                    setShowDrawer(true);
-                  }}
-                  hitSlop={8}
-                  style={({ pressed }) => ({
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    backgroundColor: "rgba(0, 0, 0, 0.45)",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: pressed ? 0.75 : 1,
-                  })}
-                >
-                  <Ionicons
-                    name="ellipsis-horizontal"
-                    size={20}
-                    color="white"
-                  />
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Profile header */}
-            <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
-              {/* Avatar + Edit Profile */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "flex-end",
-                  justifyContent: "space-between",
-                  marginTop: -48,
-                  marginBottom: 12,
-                }}
-              >
-                {bskyProfile.avatar ? (
-                  <Image
-                    source={{ uri: bskyProfile.avatar }}
-                    style={{
-                      width: 92,
-                      height: 92,
-                      borderRadius: 46,
-                      borderWidth: 4,
-                      borderColor: "white",
-                      backgroundColor: SURFACE_ALT,
-                    }}
-                  />
-                ) : (
-                  <Avatar
-                    name={bskyProfile.displayName}
-                    size={92}
-                    seed={bskyProfile.did}
-                    style={{ borderWidth: 4, borderColor: "white" }}
-                  />
-                )}
-
-                <Pressable
-                  onPress={openEdit}
-                  style={({ pressed }) => ({
-                    paddingHorizontal: 16,
-                    height: 34,
-                    borderRadius: 17,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: pressed ? "#1557b0" : ACCENT,
-                    flexDirection: "row",
-                  })}
-                >
-                  <Ionicons
-                    name="create-outline"
-                    size={14}
-                    color="white"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text
-                    style={{ fontSize: 14, fontWeight: "600", color: "white" }}
-                  >
-                    Edit Profile
-                  </Text>
-                </Pressable>
-              </View>
-
-              {/* Display name */}
-              <Text
-                style={{
-                  fontSize: 22,
-                  fontWeight: "800",
-                  color: TEXT,
-                  letterSpacing: -0.4,
-                }}
-                numberOfLines={2}
-              >
-                {bskyProfile.displayName}
-              </Text>
-
-              {/* Handle */}
-              <Text
-                style={{
-                  fontSize: 14,
-                  color: MUTED,
-                  marginTop: 2,
-                }}
-                numberOfLines={1}
-              >
-                @{bskyProfile.handle}
-              </Text>
-
-              {/* Bio */}
-              {bskyProfile.description ? (
-                <Text
-                  style={{
-                    fontSize: 14,
-                    color: TEXT_SECONDARY,
-                    lineHeight: 20,
-                    marginTop: 12,
-                  }}
-                >
-                  {bskyProfile.description}
-                </Text>
-              ) : null}
-
-              {/* Joined */}
-              {bskyProfile.createdAt ? (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginTop: 10,
-                  }}
-                >
-                  <Ionicons
-                    name="calendar-outline"
-                    size={14}
-                    color={MUTED}
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={{ fontSize: 13, color: MUTED }}>
-                    Joined {formatJoinDate(bskyProfile.createdAt)}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Real stats */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 20,
-                  marginTop: 14,
-                  flexWrap: "wrap",
-                }}
-              >
-                <Pressable
-                  onPress={openOnBluesky}
-                  hitSlop={4}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                >
-                  <Text style={{ fontSize: 14, color: TEXT_SECONDARY }}>
-                    <Text style={{ fontWeight: "700", color: TEXT }}>
-                      {formatCount(bskyProfile.followsCount)}
-                    </Text>
-                    {"  "}
-                    <Text style={{ color: MUTED }}>following</Text>
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={openOnBluesky}
-                  hitSlop={4}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                >
-                  <Text style={{ fontSize: 14, color: TEXT_SECONDARY }}>
-                    <Text style={{ fontWeight: "700", color: TEXT }}>
-                      {formatCount(bskyProfile.followersCount)}
-                    </Text>
-                    {"  "}
-                    <Text style={{ color: MUTED }}>
-                      {bskyProfile.followersCount === 1
-                        ? "follower"
-                        : "followers"}
-                    </Text>
-                  </Text>
-                </Pressable>
-                <View>
-                  <Text style={{ fontSize: 14, color: TEXT_SECONDARY }}>
-                    <Text style={{ fontWeight: "700", color: TEXT }}>
-                      {formatCount(bskyProfile.postsCount)}
-                    </Text>
-                    {"  "}
-                    <Text style={{ color: MUTED }}>
-                      {bskyProfile.postsCount === 1 ? "post" : "posts"}
-                    </Text>
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Tab bar */}
-            <View
-              style={{
-                borderBottomWidth: 1,
-                borderBottomColor: HAIRLINE,
-                backgroundColor: "white",
-              }}
-            >
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 8 }}
-              >
-                {TABS.map((tab) => {
-                  const isActive = activeTab === tab.key;
-                  return (
-                    <Pressable
-                      key={tab.key}
-                      onPress={() => {
-                        Haptics.selectionAsync().catch(() => {});
-                        setActiveTab(tab.key);
-                      }}
-                      style={({ pressed }) => ({
-                        paddingHorizontal: 16,
-                        paddingVertical: 14,
-                        opacity: pressed ? 0.6 : 1,
-                      })}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: isActive ? "700" : "500",
-                          color: isActive ? TEXT : MUTED,
-                        }}
-                      >
-                        {tab.label}
-                      </Text>
-                      {isActive ? (
-                        <View
-                          style={{
-                            position: "absolute",
-                            left: 16,
-                            right: 16,
-                            bottom: 0,
-                            height: 3,
-                            backgroundColor: ACCENT,
-                            borderTopLeftRadius: 2,
-                            borderTopRightRadius: 2,
-                          }}
-                        />
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          </View>
-        }
-        ListEmptyComponent={
-          feedLoading ? (
-            <View style={{ paddingVertical: 48, alignItems: "center" }}>
-              <ActivityIndicator color={ACCENT} />
-            </View>
-          ) : (
-            <View
-              style={{
-                paddingVertical: 64,
-                paddingHorizontal: 32,
-                alignItems: "center",
-              }}
-            >
-              <Ionicons
-                name={emptyMessages[activeTab].icon}
-                size={36}
-                color={MUTED}
-                style={{ marginBottom: 12 }}
-              />
-              <Text style={{ fontSize: 13, color: MUTED, textAlign: "center" }}>
-                {emptyMessages[activeTab].text}
-              </Text>
-            </View>
-          )
-        }
-        renderItem={({ item }) => <PostRow item={item} />}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        removeClippedSubviews={false}
+        contentContainerStyle={{ backgroundColor: "white" }}
       />
 
       {/* Drawer */}
@@ -912,11 +920,17 @@ export default function ProfileScreen() {
                       paddingHorizontal: 8,
                       paddingVertical: 4,
                       borderRadius: 4,
-                      backgroundColor: pressed ? SURFACE_HOVER : SURFACE_ALT,
+                      backgroundColor: pressed
+                        ? SURFACE_HOVER
+                        : SURFACE_ALT,
                     })}
                   >
                     <Text
-                      style={{ fontSize: 10, color: TEXT, fontWeight: "600" }}
+                      style={{
+                        fontSize: 10,
+                        color: TEXT,
+                        fontWeight: "600",
+                      }}
                     >
                       {copied ? "Copied" : "Copy"}
                     </Text>
@@ -963,7 +977,13 @@ export default function ProfileScreen() {
         transparent={false}
         onRequestClose={() => (saving ? undefined : setIsEditing(false))}
       >
-        <View style={{ flex: 1, backgroundColor: "white", paddingTop: insets.top }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "white",
+            paddingTop: insets.top,
+          }}
+        >
           <View
             style={{
               height: 56,
@@ -1039,7 +1059,6 @@ export default function ProfileScreen() {
                 </View>
               ) : null}
 
-              {/* Handle (read-only — Bluesky handle changes need separate flow) */}
               <View style={{ marginBottom: 20 }}>
                 <Text
                   style={{
@@ -1074,7 +1093,6 @@ export default function ProfileScreen() {
                 </Text>
               </View>
 
-              {/* Display Name */}
               <View style={{ marginBottom: 20 }}>
                 <View
                   style={{
@@ -1119,7 +1137,6 @@ export default function ProfileScreen() {
                 />
               </View>
 
-              {/* Bio */}
               <View style={{ marginBottom: 20 }}>
                 <View
                   style={{
@@ -1182,13 +1199,16 @@ export default function ProfileScreen() {
 }
 
 function PostRow({ item }: { item: BskyFeedItem }) {
+  const avatarSize = 40;
   return (
     <View
       style={{
         paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingTop: 12,
+        paddingBottom: 14,
         borderBottomWidth: 1,
         borderBottomColor: HAIRLINE,
+        backgroundColor: "white",
       }}
     >
       {item.isRepost && item.repostedBy ? (
@@ -1197,7 +1217,7 @@ function PostRow({ item }: { item: BskyFeedItem }) {
             flexDirection: "row",
             alignItems: "center",
             marginBottom: 6,
-            marginLeft: 50,
+            marginLeft: avatarSize + 10,
           }}
         >
           <Ionicons name="repeat" size={12} color={MUTED} />
@@ -1207,104 +1227,118 @@ function PostRow({ item }: { item: BskyFeedItem }) {
         </View>
       ) : null}
 
+      {/* Avatar + content row */}
       <View style={{ flexDirection: "row" }}>
-        {item.author.avatar ? (
-          <Image
-            source={{ uri: item.author.avatar }}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              marginRight: 10,
-              backgroundColor: SURFACE_ALT,
-            }}
-          />
-        ) : (
-          <Avatar
-            name={item.author.displayName}
-            size={40}
-            seed={item.author.did}
-            style={{ marginRight: 10 }}
-          />
-        )}
+        {/* Avatar column — fixed width, never overlaps */}
+        <View style={{ width: avatarSize, marginRight: 10 }}>
+          {item.author.avatar ? (
+            <Image
+              source={{ uri: item.author.avatar }}
+              style={{
+                width: avatarSize,
+                height: avatarSize,
+                borderRadius: avatarSize / 2,
+                backgroundColor: SURFACE_ALT,
+              }}
+              contentFit="cover"
+              transition={120}
+              cachePolicy="memory-disk"
+            />
+          ) : (
+            <Avatar
+              name={item.author.displayName}
+              size={avatarSize}
+              seed={item.author.did}
+            />
+          )}
+        </View>
 
-        <View style={{ flex: 1 }}>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
+        {/* Content column — flex:1, all text wraps here, no absolute positioning */}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {/* Header line: name @handle · time */}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
             <Text
-              style={{ fontSize: 14, fontWeight: "700", color: TEXT }}
+              style={{
+                fontSize: 14,
+                fontWeight: "700",
+                color: TEXT,
+                maxWidth: "55%",
+              }}
               numberOfLines={1}
             >
               {item.author.displayName}
             </Text>
             <Text
-              style={{ fontSize: 13, color: MUTED, marginLeft: 6 }}
+              style={{
+                fontSize: 13,
+                color: MUTED,
+                marginLeft: 6,
+                flexShrink: 1,
+              }}
               numberOfLines={1}
             >
               @{item.author.handle}
             </Text>
-            <Text style={{ fontSize: 13, color: MUTED, marginLeft: 6 }}>·</Text>
-            <Text style={{ fontSize: 13, color: MUTED, marginLeft: 6 }}>
-              {formatRelative(item.indexedAt)}
+            <Text
+              style={{ fontSize: 13, color: MUTED, marginLeft: 6 }}
+              numberOfLines={1}
+            >
+              · {formatRelative(item.indexedAt)}
             </Text>
           </View>
 
+          {/* Reply indicator */}
           {item.isReply ? (
             <Text style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
               Replying to a post
             </Text>
           ) : null}
 
+          {/* Body text — rendered as a Text node with mixed children.
+              We pass an array (string | null | Element) which RN handles fine. */}
           {item.text ? (
-            <Text
-              style={{
-                fontSize: 15,
-                color: TEXT,
-                lineHeight: 21,
-                marginTop: 4,
-              }}
-            >
-              {item.text}
-            </Text>
-          ) : null}
-
-          {item.images.length > 0 ? (
-            <View
-              style={{
-                marginTop: 8,
-                borderRadius: 10,
-                overflow: "hidden",
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 2,
-              }}
-            >
-              {item.images.slice(0, 4).map((img, idx) => (
-                <Image
-                  key={idx}
-                  source={{ uri: img.thumb }}
-                  style={{
-                    width: item.images.length === 1 ? "100%" : "49.5%",
-                    height: item.images.length === 1 ? 220 : 140,
-                    backgroundColor: SURFACE_ALT,
-                  }}
-                  resizeMode="cover"
-                />
-              ))}
+            <View style={{ marginTop: 4 }}>
+              <Text
+                style={{
+                  fontSize: 15,
+                  color: TEXT,
+                  lineHeight: 21,
+                }}
+              >
+                {renderRichText(
+                  item.text,
+                  item.record?.facets,
+                  item.embed?.external?.uri
+                )}
+              </Text>
             </View>
           ) : null}
 
+          {/* Image grid */}
+          {item.embed?.images && item.embed.images.length > 0 ? (
+            <ImageGrid images={item.embed.images} />
+          ) : item.images && item.images.length > 0 ? (
+            <ImageGrid images={item.images} />
+          ) : null}
+
+          {/* External link card */}
+          {item.embed?.external ? (
+            <ExternalLinkCard external={item.embed.external} />
+          ) : null}
+
+          {/* Quoted post */}
+          {item.embed?.record ? (
+            <QuotedPostCard record={item.embed.record} />
+          ) : null}
+
+          {/* Action row */}
           <View
             style={{
               flexDirection: "row",
-              marginTop: 10,
+              marginTop: 12,
+              alignItems: "center",
               justifyContent: "space-between",
-              paddingRight: 24,
+              paddingRight: 8,
             }}
           >
             <View style={{ flexDirection: "row", alignItems: "center" }}>

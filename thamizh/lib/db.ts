@@ -158,6 +158,7 @@ export async function ensureConnected(): Promise<void> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
     const token = await restoreToken();
+    console.log("[db] ensureConnected: starting connection", { host: HOST, db: DB_NAME, hasToken: !!token });
     const builder = DbConnection.builder()
       .withUri(HOST)
       .withDatabaseName(DB_NAME)
@@ -167,6 +168,7 @@ export async function ensureConnected(): Promise<void> {
 
     builder
       .onConnect((_ctx, ident, tok) => {
+        console.log("[db] onConnect fired", { ident: ident?.toHexString?.(), hasTok: !!tok });
         identityRef = ident as any;
         identityHex = (ident as any).toHexString();
         isActive = true;
@@ -175,6 +177,7 @@ export async function ensureConnected(): Promise<void> {
         notify();
       })
       .onDisconnect(() => {
+        console.log("[db] onDisconnect fired", { wasActive: isActive });
         const wasActive = isActive;
         isActive = false;
         identityRef = null;
@@ -188,27 +191,32 @@ export async function ensureConnected(): Promise<void> {
         if (wasActive) notify();
       })
       .onConnectError((_ctx, err) => {
-        console.error("SpacetimeDB connection error:", err);
+        console.error("[db] onConnectError fired:", err);
         connectError = err instanceof Error ? err.message : String(err);
         refreshConnectionSnapshot();
         notify();
       });
 
     connection = builder.build() as any;
+    console.log("[db] builder.build() called, waiting for active connection...");
 
     // Wait for connection to go active (15s timeout so the UI doesn't spin forever)
     await new Promise<void>((resolve, reject) => {
       if (connection!.isActive) {
+        console.log("[db] already active immediately");
         resolve();
         return;
       }
       const deadline = Date.now() + 15000;
       const check = () => {
         if (connection!.isActive) {
+          console.log("[db] connection became active");
           resolve();
         } else if (connectError) {
+          console.error("[db] connectError detected:", connectError);
           reject(new Error(`SpacetimeDB connect failed: ${connectError}`));
         } else if (Date.now() > deadline) {
+          console.error("[db] connection timed out after 15s");
           reject(new Error(`SpacetimeDB connect timed out after 15s (host=${HOST}, db=${DB_NAME})`));
         } else {
           setTimeout(check, 100);
@@ -217,15 +225,19 @@ export async function ensureConnected(): Promise<void> {
       check();
     });
 
+    console.log("[db] connection active, subscribing to tables...");
+
     // Subscribe to all tables (10s timeout)
     await new Promise<void>((resolve, reject) => {
       const deadline = setTimeout(() => {
+        console.error("[db] subscription timed out after 10s");
         reject(new Error("SpacetimeDB subscription timed out after 10s — does the deployed module have the expected tables?"));
       }, 10000);
 
       const subBuilder = connection!.subscriptionBuilder()
         .onApplied(() => {
           clearTimeout(deadline);
+          console.log("[db] subscription onApplied fired, tables ready");
           tablesReady = true;
           try { attachAllTableListeners(); } catch (e) { console.warn("[db] attachAllTableListeners failed", e); }
           refreshUsersSnapshot();
@@ -241,6 +253,7 @@ export async function ensureConnected(): Promise<void> {
       if (typeof subBuilder.onError === "function") {
         subBuilder.onError((_ctx: unknown, err: unknown) => {
           clearTimeout(deadline);
+          console.error("[db] subscription onError fired:", err);
           reject(new Error(`SpacetimeDB subscription failed: ${err instanceof Error ? err.message : String(err)}`));
         });
       }
@@ -254,6 +267,8 @@ export async function ensureConnected(): Promise<void> {
         "SELECT * FROM groupMember",
       ]);
     });
+
+    console.log("[db] ensureConnected completed successfully");
   })().catch((err) => {
     console.error("[db] ensureConnected failed:", err);
     connectError = err instanceof Error ? err.message : String(err);

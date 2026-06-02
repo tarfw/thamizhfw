@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Text, TextInput, View } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Pressable } from "@/lib/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Redirect, Stack, useRouter } from "expo-router";
@@ -63,8 +64,7 @@ export default function PickConstituency() {
           <TextInput value={query} onChangeText={setQuery} placeholder="Search name, district, or number" placeholderTextColor={MUTED} autoCorrect={false} autoCapitalize="none" style={{ flex: 1, paddingHorizontal: 10, color: TEXT, fontSize: 15, height: 44 }} />
         </View>
       </View>
-      <FlatList
-        style={{ flex: 1 }}
+      <FlashList
         data={filtered}
         keyExtractor={(r) => r.id}
         keyboardShouldPersistTaps="handled"

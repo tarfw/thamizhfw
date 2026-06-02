@@ -1,5 +1,6 @@
 import React from "react";
-import { FlatList, Text, View, Share } from "react-native";
+import { Text, View, Share } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -120,7 +121,7 @@ export default function CommunityScreen() {
         </Pressable>
       </View>
 
-      <FlatList
+      <FlashList
         data={members}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{

@@ -9,4 +9,4 @@ npm install
 npm run start
 ```
 
-The SpacetimeDB module lives in `thamizh-server/`. Client bindings are generated into `lib/module_bindings/`.
+The SpacetimeDB module lives in `spacetimeserver/`. Client bindings are generated into `lib/module_bindings/`.

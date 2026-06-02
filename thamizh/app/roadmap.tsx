@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { FlatList, Text, View, LayoutAnimation, Platform, UIManager } from "react-native";
+import { Text, View, LayoutAnimation, Platform, UIManager } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -145,7 +146,7 @@ export default function Roadmap() {
         </Text>
       </View>
 
-      <FlatList
+      <FlashList
         data={ROADMAP_DATA}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{

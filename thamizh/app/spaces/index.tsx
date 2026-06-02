@@ -1,27 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
-import Svg, { Line } from "react-native-svg";
+import { FiveWingAsterisk } from "@/lib/FiveWingAsterisk";
 import { Stack, Link, Redirect, useRouter } from "expo-router";
 import { useMemo, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import {
   ActivityIndicator,
-  FlatList,
   Modal,
   Text,
   TextInput,
   View,
-  Image,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
+import { Image } from "expo-image";
 import { Pressable } from "@/lib/Pressable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSpacetimeDB } from "@/lib/SpacetimeDBProvider";
+import { useBskyChat } from "@/lib/BskyChatProvider";
 import { ts } from "@/lib/db";
 import { useSession, constituencies } from "@/lib/auth";
-import { useLastRead } from "@/lib/unread";
 import type { Message } from "@/lib/module_bindings/types";
+import { isGroupConvo, groupKind, type ConvoView } from "@/lib/bsky-chat";
 import Avatar from "@/lib/Avatar";
 import BrandLogo from "@/lib/BrandLogo";
+import {
+  renderRichText,
+  ExternalLinkCard,
+  QuotedPostCard,
+} from "@/lib/bskyPostRender";
 import {
   ACCENT,
   ACCENT_DARK,
@@ -32,6 +38,20 @@ import {
   SURFACE_HOVER,
   TEXT,
 } from "@/lib/theme";
+
+function previewText(c: ConvoView): string {
+  const m = c.lastMessage;
+  if (!m) {
+    if (isGroupConvo(c)) {
+      const k = groupKind(c);
+      return `${k?.memberCount ?? c.members.length} members`;
+    }
+    return "No messages yet";
+  }
+  if (m.$type === "chat.bsky.convo.defs#deletedMessageView") return "Message deleted";
+  if (m.$type === "chat.bsky.convo.defs#systemMessageView") return "System message";
+  return (m as any).text ?? "";
+}
 
 type Row = {
   id: string;
@@ -46,7 +66,6 @@ type Row = {
 };
 
 type Tab = "feed" | "chats" | "spaces";
-type ChatsSubTab = "direct" | "groups";
 
 const EELAM_CONSTITUENCIES: Row[] = [
   {
@@ -127,7 +146,6 @@ export default function ConstituenciesIndex() {
   const { isLoading: sessionLoading, user, profile, constituency } = useSession();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("spaces");
-  const [chatsSubTab, setChatsSubTab] = useState<ChatsSubTab>("direct");
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [activeLocation, setActiveLocation] = useState<"Tamilnadu" | "Eelam">("Tamilnadu");
   const [bskyPosts, setBskyPosts] = useState<any[]>([]);
@@ -149,9 +167,15 @@ export default function ConstituenciesIndex() {
         );
         const json = await res.json();
         if (active && json.posts) {
-          setBskyPosts(json.posts);
-          if (json.posts.length > 0) {
-            const oldest = json.posts[json.posts.length - 1];
+          const seen = new Set<string>();
+          const unique = json.posts.filter((p: any) => {
+            if (!p?.uri || seen.has(p.uri)) return false;
+            seen.add(p.uri);
+            return true;
+          });
+          setBskyPosts(unique);
+          if (unique.length > 0) {
+            const oldest = unique[unique.length - 1];
             const oldestDate = oldest.record?.createdAt || oldest.indexedAt;
             setBskyUntil(oldestDate || null);
           } else {
@@ -183,7 +207,13 @@ export default function ConstituenciesIndex() {
       if (json.posts && json.posts.length > 0) {
         setBskyPosts((prev) => {
           const existingUris = new Set(prev.map(p => p.uri));
-          const filteredNew = json.posts.filter((p: any) => !existingUris.has(p.uri));
+          const seenLocal = new Set<string>();
+          const filteredNew = json.posts.filter((p: any) => {
+            if (!p?.uri) return false;
+            if (existingUris.has(p.uri) || seenLocal.has(p.uri)) return false;
+            seenLocal.add(p.uri);
+            return true;
+          });
           return [...prev, ...filteredNew];
         });
         const oldest = json.posts[json.posts.length - 1];
@@ -235,149 +265,51 @@ export default function ConstituenciesIndex() {
     await AsyncStorage.setItem("@pinned_spaces", JSON.stringify(next));
   };
 
-  const { messages: allMessages, users, groupChats, groupMembers, conn } = useSpacetimeDB();
-  const myIdHex = conn.identity?.toHexString();
-  const { getLastRead } = useLastRead();
+  const { messages: allMessages } = useSpacetimeDB();
+  const { convos: bskyConvos, me: bskyMe } = useBskyChat();
   const constituencyMessages = allMessages.filter(
     (m) => m.roomType === "constituency"
   );
 
-  const chatsUnreadTotal = useMemo(() => {
-    if (!myIdHex) return 0;
-    let total = 0;
-    // private rooms: count incoming msgs newer than lastRead per roomId
-    const privateLastReadByRoom = new Map<string, number>();
-    for (const m of allMessages) {
-      if (m.roomType !== "private") continue;
-      if (m.sender.toHexString() === myIdHex) continue;
-      if (!privateLastReadByRoom.has(m.roomId)) {
-        privateLastReadByRoom.set(m.roomId, getLastRead(m.roomId));
-      }
-      if (ts(m.sent) > (privateLastReadByRoom.get(m.roomId) ?? 0)) total += 1;
-    }
-    // groups I'm in
-    const myGroupIds = new Set(
-      groupMembers
-        .filter((m) => m.memberId.toHexString() === myIdHex)
-        .map((m) => String(m.groupId))
-    );
-    const groupLastReadByRoom = new Map<string, number>();
-    for (const m of allMessages) {
-      if (m.roomType !== "group") continue;
-      if (!myGroupIds.has(m.roomId)) continue;
-      if (m.sender.toHexString() === myIdHex) continue;
-      if (!groupLastReadByRoom.has(m.roomId)) {
-        groupLastReadByRoom.set(m.roomId, getLastRead(m.roomId));
-      }
-      if (ts(m.sent) > (groupLastReadByRoom.get(m.roomId) ?? 0)) total += 1;
-    }
-    return total;
-  }, [allMessages, groupMembers, myIdHex, getLastRead]);
-
-  const privateChats = useMemo(() => {
-    if (!myIdHex) return [];
-    const privateMsgs = allMessages.filter((m) => m.roomType === "private");
-    const roomMap = new Map<
-      string,
-      {
-        roomId: string;
-        lastBody: string;
-        lastTime: number;
-        otherUserId: string;
-        unread: number;
-      }
-    >();
-    for (const m of privateMsgs) {
-      const mTime = ts(m.sent);
-      const senderHex = m.sender.toHexString();
-      const parts = m.roomId.split("_");
-      const otherUserId = parts[0] === myIdHex ? parts[1] : parts[0];
-      const lastRead = getLastRead(m.roomId);
-      const isUnread = senderHex !== myIdHex && mTime > lastRead;
-      const existing = roomMap.get(m.roomId);
-      if (!existing) {
-        roomMap.set(m.roomId, {
-          roomId: m.roomId,
-          lastBody: m.body,
-          lastTime: mTime,
-          otherUserId,
-          unread: isUnread ? 1 : 0,
-        });
-      } else {
-        if (mTime > existing.lastTime) {
-          existing.lastBody = m.body;
-          existing.lastTime = mTime;
-        }
-        if (isUnread) existing.unread += 1;
-      }
-    }
-    return Array.from(roomMap.values()).sort((a, b) => b.lastTime - a.lastTime);
-  }, [allMessages, myIdHex, getLastRead]);
-
-  const groupsList = useMemo(() => {
-    if (!myIdHex) return [];
-    const myGroupIds = new Set(
-      groupMembers
-        .filter((m) => m.memberId.toHexString() === myIdHex)
-        .map((m) => m.groupId)
-    );
-    return groupChats
-      .filter((g) => myGroupIds.has(g.id))
-      .map((g) => {
-        const groupMsgs = allMessages.filter(
-          (m) => m.roomType === "group" && m.roomId === String(g.id)
-        );
-        const sorted = [...groupMsgs].sort((a, b) => ts(b.sent) - ts(a.sent));
-        const lastMsg = sorted[0];
-        const lastRead = getLastRead(String(g.id));
-        const unread = groupMsgs.reduce((acc, m) => {
-          return m.sender.toHexString() !== myIdHex && ts(m.sent) > lastRead
-            ? acc + 1
-            : acc;
-        }, 0);
-        return {
-          id: g.id,
-          name: g.name,
-          lastBody: lastMsg?.body ?? "",
-          lastTime: lastMsg ? ts(lastMsg.sent) : 0,
-          memberCount: groupMembers.filter((m) => m.groupId === g.id).length,
-          unread,
-        };
-      })
-      .sort((a, b) => b.lastTime - a.lastTime);
-  }, [groupChats, groupMembers, allMessages, myIdHex, getLastRead]);
-
-  const directUnreadTotal = useMemo(
-    () => privateChats.reduce((a, c) => a + c.unread, 0),
-    [privateChats]
+  const chatsUnreadTotal = useMemo(
+    () =>
+      (bskyConvos ?? []).reduce((sum, c) => sum + (c.unreadCount ?? 0), 0),
+    [bskyConvos]
   );
-  const groupsUnreadTotal = useMemo(
-    () => groupsList.reduce((a, g) => a + g.unread, 0),
-    [groupsList]
+
+  const privateChats = useMemo(
+    () =>
+      (bskyConvos ?? [])
+        .filter((c) => !isGroupConvo(c))
+        .map((c) => {
+          const other =
+            c.members.find((m) => m.did !== bskyMe?.did) ?? c.members[0];
+          const name = other?.displayName ?? other?.handle ?? "Unknown";
+          return {
+            roomId: c.id,
+            otherUserId: other?.did ?? "",
+            otherName: name,
+            otherHandle: other?.handle ?? "",
+            otherAvatar: other?.avatar,
+            lastBody: previewText(c),
+            lastTime: c.lastEventAt ? Date.parse(c.lastEventAt) || 0 : 0,
+            unread: c.unreadCount ?? 0,
+          };
+        })
+        .sort((a, b) => b.lastTime - a.lastTime),
+    [bskyConvos, bskyMe]
   );
 
   const filteredPrivate = useMemo(() => {
     if (!query.trim()) return privateChats;
     const q = query.toLowerCase();
-    return privateChats.filter((c) => {
-      const u = users.find((u) => u.identity.toHexString() === c.otherUserId);
-      return (
-        u?.displayName.toLowerCase().includes(q) ||
-        u?.handle.toLowerCase().includes(q) ||
+    return privateChats.filter(
+      (c) =>
+        c.otherName.toLowerCase().includes(q) ||
+        c.otherHandle.toLowerCase().includes(q) ||
         c.lastBody.toLowerCase().includes(q)
-      );
-    });
-  }, [privateChats, query, users]);
-
-  const filteredGroups = useMemo(() => {
-    if (!query.trim()) return groupsList;
-    const q = query.toLowerCase();
-    return groupsList.filter(
-      (g) =>
-        g.name.toLowerCase().includes(q) ||
-        g.lastBody.toLowerCase().includes(q)
     );
-  }, [groupsList, query]);
+  }, [privateChats, query]);
 
   const rows = useMemo(() => {
     if (activeLocation === "Eelam") {
@@ -525,7 +457,7 @@ export default function ConstituenciesIndex() {
       </View>
 
       {/* Search Bar */}
-      {tab === "spaces" || tab === "chats" ? (
+      {tab === "spaces" ? (
         <View
           style={{
             paddingHorizontal: 16,
@@ -547,13 +479,7 @@ export default function ConstituenciesIndex() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder={
-                tab === "chats"
-                  ? chatsSubTab === "direct"
-                    ? "Search direct chats..."
-                    : "Search groups..."
-                  : "Search spaces or districts..."
-              }
+              placeholder="Search spaces or districts..."
               placeholderTextColor={MUTED}
               autoCorrect={false}
               autoCapitalize="none"
@@ -578,87 +504,16 @@ export default function ConstituenciesIndex() {
         </View>
       ) : null}
 
-      {/* Chats Direct/Groups sub-tabs */}
-      {tab === "chats" ? (
-        <View
-          style={{
-            flexDirection: "row",
-            borderBottomWidth: 1,
-            borderBottomColor: HAIRLINE,
-            backgroundColor: "white",
-          }}
-        >
-          {([
-            { key: "direct" as const, label: "Direct", unread: directUnreadTotal },
-            { key: "groups" as const, label: "Groups", unread: groupsUnreadTotal },
-          ]).map((t) => {
-            const isActive = chatsSubTab === t.key;
-            return (
-              <Pressable
-                key={t.key}
-                onPress={() => setChatsSubTab(t.key)}
-                style={({ pressed }) => ({
-                  flex: 1,
-                  paddingVertical: 12,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: isActive ? "700" : "500",
-                      color: isActive ? TEXT : MUTED,
-                    }}
-                  >
-                    {t.label}
-                  </Text>
-                  {t.unread > 0 ? (
-                    <View
-                      style={{
-                        minWidth: 20,
-                        height: 20,
-                        borderRadius: 10,
-                        backgroundColor: ACCENT,
-                        paddingHorizontal: 6,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginLeft: 6,
-                      }}
-                    >
-                      <Text style={{ color: "white", fontSize: 11, fontWeight: "700" }}>
-                        {t.unread > 99 ? "99+" : t.unread}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-                {isActive ? (
-                  <View
-                    style={{
-                      position: "absolute",
-                      left: "25%",
-                      right: "25%",
-                      bottom: 0,
-                      height: 3,
-                      backgroundColor: ACCENT,
-                      borderTopLeftRadius: 2,
-                      borderTopRightRadius: 2,
-                    }}
-                  />
-                ) : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
-
       {tab === "feed" ? (
-        <FlatList
-          style={{ flex: 1 }}
+        <FlashList
           data={bskyPosts}
           keyExtractor={(item) => item.uri}
+          getItemType={(item) => {
+            if (item.embed?.record) return "quoted";
+            if (item.embed?.images?.length) return "image";
+            if (item.embed?.external) return "link";
+            return "text";
+          }}
           refreshing={bskyLoading}
           onRefresh={async () => {
             setBskyLoading(true);
@@ -711,142 +566,77 @@ export default function ConstituenciesIndex() {
           )}
         />
       ) : tab === "chats" ? (
-        chatsSubTab === "direct" ? (
-          <FlatList
-            style={{ flex: 1 }}
-            data={filteredPrivate}
-            keyExtractor={(item) => item.roomId}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 96, flexGrow: 1 }}
-            ListEmptyComponent={
-              <ChatsEmpty
-                icon="chatbubble-outline"
-                title={query ? "No matches" : "No direct chats yet"}
-                hint={
-                  query
-                    ? "Try a different search."
-                    : "Start a conversation from any space or profile."
+        <FlashList
+          data={filteredPrivate}
+          keyExtractor={(item) => item.roomId}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 168, flexGrow: 1 }}
+          ListEmptyComponent={
+            <ChatsEmpty
+              icon="chatbubble-outline"
+              title={query ? "No matches" : "No direct chats yet"}
+              hint={
+                query
+                  ? "Try a different search."
+                  : "Start a conversation from any space or profile."
+              }
+            />
+          }
+          renderItem={({ item }) => {
+            const name = item.otherName || item.otherHandle || "Unknown";
+            const hasUnread = item.unread > 0;
+            return (
+              <Pressable
+                onPress={() =>
+                  router.push(`/chats/private/${item.roomId}` as any)
                 }
-              />
-            }
-            renderItem={({ item }) => {
-              const otherUser = users.find(
-                (u) => u.identity.toHexString() === item.otherUserId
-              );
-              const name = otherUser?.displayName ?? item.otherUserId.slice(0, 8);
-              const hasUnread = item.unread > 0;
-              return (
-                <Pressable
-                  onPress={() =>
-                    router.push(`/chats/private/${item.roomId}` as any)
-                  }
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    backgroundColor: pressed ? SURFACE_HOVER : "white",
-                  })}
-                >
-                  <Avatar name={name} size={44} seed={item.otherUserId} />
-                  <View style={{ flex: 1, marginLeft: 14, minWidth: 0 }}>
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        fontSize: 15,
-                        color: TEXT,
-                        fontWeight: hasUnread ? "700" : "500",
-                      }}
-                    >
-                      {name}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        fontSize: 13,
-                        color: hasUnread ? TEXT : MUTED,
-                        marginTop: 2,
-                        fontWeight: hasUnread ? "600" : "400",
-                      }}
-                    >
-                      {item.lastBody}
-                    </Text>
-                  </View>
-                  {hasUnread ? (
-                    <ChatsUnreadBadge count={item.unread} />
-                  ) : (
-                    <Ionicons name="chevron-forward" size={18} color={MUTED} />
-                  )}
-                </Pressable>
-              );
-            }}
-          />
-        ) : (
-          <FlatList
-            style={{ flex: 1 }}
-            data={filteredGroups}
-            keyExtractor={(item) => String(item.id)}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 96, flexGrow: 1 }}
-            ListEmptyComponent={
-              <ChatsEmpty
-                icon="people-outline"
-                title={query ? "No matches" : "No groups yet"}
-                hint={
-                  query
-                    ? "Try a different search."
-                    : "Create a group from the chats screen."
-                }
-              />
-            }
-            renderItem={({ item }) => {
-              const hasUnread = item.unread > 0;
-              return (
-                <Pressable
-                  onPress={() => router.push(`/chats/groups/${item.id}` as any)}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    backgroundColor: pressed ? SURFACE_HOVER : "white",
-                  })}
-                >
-                  <Avatar name={item.name} size={44} seed={String(item.id)} />
-                  <View style={{ flex: 1, marginLeft: 14, minWidth: 0 }}>
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        fontSize: 15,
-                        color: TEXT,
-                        fontWeight: hasUnread ? "700" : "500",
-                      }}
-                    >
-                      {item.name}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        fontSize: 13,
-                        color: hasUnread ? TEXT : MUTED,
-                        marginTop: 2,
-                        fontWeight: hasUnread ? "600" : "400",
-                      }}
-                    >
-                      {item.lastBody || `${item.memberCount} members`}
-                    </Text>
-                  </View>
-                  {hasUnread ? (
-                    <ChatsUnreadBadge count={item.unread} />
-                  ) : (
-                    <Ionicons name="chevron-forward" size={18} color={MUTED} />
-                  )}
-                </Pressable>
-              );
-            }}
-          />
-        )
+                style={({ pressed }) => ({
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  backgroundColor: pressed ? SURFACE_HOVER : "white",
+                })}
+              >
+                <Avatar
+                  name={name}
+                  size={44}
+                  seed={item.otherUserId || item.roomId}
+                  url={item.otherAvatar}
+                />
+                <View style={{ flex: 1, marginLeft: 14, minWidth: 0 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      fontSize: 15,
+                      color: TEXT,
+                      fontWeight: hasUnread ? "700" : "500",
+                    }}
+                  >
+                    {name}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      fontSize: 13,
+                      color: hasUnread ? TEXT : MUTED,
+                      marginTop: 2,
+                      fontWeight: hasUnread ? "600" : "400",
+                    }}
+                  >
+                    {item.lastBody}
+                  </Text>
+                </View>
+                {hasUnread ? (
+                  <ChatsUnreadBadge count={item.unread} />
+                ) : (
+                  <Ionicons name="chevron-forward" size={18} color={MUTED} />
+                )}
+              </Pressable>
+            );
+          }}
+        />
       ) : (
-        <FlatList
-          style={{ flex: 1 }}
+        <FlashList
           data={ordered}
           keyExtractor={(r) => r.id}
           contentContainerStyle={{
@@ -876,6 +666,30 @@ export default function ConstituenciesIndex() {
           )}
         />
       )}
+
+      {/* New Message button (chats tab) */}
+      {tab === "chats" ? (
+        <Pressable
+          onPress={() => router.push("/chats/private/new" as any)}
+          style={{
+            position: "absolute",
+            left: 16,
+            right: 16,
+            bottom: 60 + Math.max(insets.bottom, 12) + 8,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: 14,
+            backgroundColor: ACCENT,
+            borderRadius: 24,
+          }}
+        >
+          <Ionicons name="create-outline" size={18} color="white" />
+          <Text style={{ color: "white", fontSize: 15, fontWeight: "600", marginLeft: 6 }}>
+            New Message
+          </Text>
+        </Pressable>
+      ) : null}
 
       {/* Bottom Navigation Bar */}
       <View
@@ -1177,45 +991,6 @@ function FeedCard({ item }: { item: any }) {
   );
 }
 
-const LINK_BLUE = "#1d9bf0";
-
-function shortenUrl(url: string) {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, "");
-    const path = u.pathname === "/" ? "" : u.pathname;
-    const tail = (host + path).replace(/\/$/, "");
-    return tail.length > 28 ? tail.slice(0, 27) + "…" : tail;
-  } catch {
-    return url.replace(/^https?:\/\/(www\.)?/, "");
-  }
-}
-
-function renderRichText(text: string, stripUrl?: string) {
-  const parts = text.split(/(#[\p{L}\p{N}_]+|@[\w.-]+|https?:\/\/\S+)/gu);
-  return parts.map((part, i) => {
-    if (!part) return null;
-    if (/^https?:\/\//.test(part)) {
-      if (stripUrl && part.replace(/\/$/, "") === stripUrl.replace(/\/$/, "")) {
-        return null;
-      }
-      return (
-        <Text key={i} style={{ color: LINK_BLUE }}>
-          {shortenUrl(part)}
-        </Text>
-      );
-    }
-    if (part[0] === "#" || part[0] === "@") {
-      return (
-        <Text key={i} style={{ color: LINK_BLUE }}>
-          {part}
-        </Text>
-      );
-    }
-    return part;
-  });
-}
-
 function BskyFeedCard({ item }: { item: any }) {
   const author = item.author || {};
   const record = item.record || {};
@@ -1242,6 +1017,9 @@ function BskyFeedCard({ item }: { item: any }) {
           <Image
             source={{ uri: author.avatar }}
             style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: SURFACE_ALT }}
+            contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
           />
         ) : (
           <Avatar name={displayName} size={40} seed={author.did || "bsky"} />
@@ -1275,7 +1053,7 @@ function BskyFeedCard({ item }: { item: any }) {
         {/* Body */}
         {record.text ? (
           <Text style={{ fontSize: 14, color: TEXT, lineHeight: 19, marginTop: 2 }}>
-            {renderRichText(record.text, item.embed?.external?.uri)}
+            {renderRichText(record.text, record.facets, item.embed?.external?.uri)}
           </Text>
         ) : null}
 
@@ -1292,49 +1070,20 @@ function BskyFeedCard({ item }: { item: any }) {
               borderWidth: 0.5,
               borderColor: HAIRLINE,
             }}
-            resizeMode="cover"
+            contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
           />
         ) : null}
 
         {/* External link card */}
         {item.embed?.external ? (
-          <View
-            style={{
-              marginTop: 8,
-              borderWidth: 0.5,
-              borderColor: HAIRLINE,
-              borderRadius: 10,
-              overflow: "hidden",
-              backgroundColor: "white",
-              flexDirection: "row",
-              alignItems: "stretch",
-            }}
-          >
-            {item.embed.external.thumb ? (
-              <Image
-                source={{ uri: item.embed.external.thumb }}
-                style={{
-                  width: 64,
-                  height: 64,
-                  backgroundColor: SURFACE_ALT,
-                }}
-                resizeMode="cover"
-              />
-            ) : null}
-            <View style={{ flex: 1, paddingHorizontal: 10, paddingVertical: 8, justifyContent: "center" }}>
-              {item.embed.external.title ? (
-                <Text
-                  style={{ fontSize: 13, color: TEXT, fontWeight: "500" }}
-                  numberOfLines={1}
-                >
-                  {item.embed.external.title}
-                </Text>
-              ) : null}
-              <Text style={{ fontSize: 11, color: MUTED, marginTop: 2 }} numberOfLines={1}>
-                {shortenUrl(item.embed.external.uri)}
-              </Text>
-            </View>
-          </View>
+          <ExternalLinkCard external={item.embed.external} />
+        ) : null}
+
+        {/* Quoted post */}
+        {item.embed?.record ? (
+          <QuotedPostCard record={item.embed.record} />
         ) : null}
 
         {/* Action row */}
@@ -1465,35 +1214,6 @@ function formatTimestamp(t: number) {
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   }
   return d.toLocaleDateString([], { year: "numeric", month: "short" });
-}
-
-function FiveWingAsterisk({ size = 28, color = "#000" }: { size?: number; color?: string }) {
-  const c = size / 2;
-  const r = size / 2 - 1;
-  const stroke = Math.max(2, size * 0.16);
-  const wings = [0, 1, 2, 3, 4].map((i) => {
-    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-    return {
-      x: c + r * Math.cos(angle),
-      y: c + r * Math.sin(angle),
-    };
-  });
-  return (
-    <Svg width={size} height={size}>
-      {wings.map((w, i) => (
-        <Line
-          key={i}
-          x1={c}
-          y1={c}
-          x2={w.x}
-          y2={w.y}
-          stroke={color}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-        />
-      ))}
-    </Svg>
-  );
 }
 
 function LocationSelector({
