@@ -4,9 +4,10 @@ import {
   saveSession,
   type BlueskySession,
 } from "./bluesky-auth";
+import { env } from "./env";
 
 const CHAT_PROXY = "did:web:api.bsky.chat#bsky_chat";
-const PUBLIC_API = "https://public.api.bsky.app";
+const PUBLIC_API = env.BLUESKY_PUBLIC_API;
 
 export type ProfileBasic = {
   did: string;

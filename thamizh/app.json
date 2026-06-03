@@ -2,14 +2,18 @@
   "expo": {
     "name": "Thamizh",
     "slug": "thamizh",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "thamizh",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tarfw.thamizh",
+      "infoPlist": {
+        "CFBundleDisplayName": "Thamizh"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +22,13 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.tarfw.thamizh",
-      "versionCode": 1
+      "versionCode": 2,
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -36,7 +46,15 @@
           "backgroundColor": "#1A73E8"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos to save images.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save images to your photo library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -45,7 +63,11 @@
       "router": {},
       "eas": {
         "projectId": "aa0bd533-a723-4d54-860c-b5a93d783b57"
-      }
+      },
+      "spacetimedbHost": "wss://maincloud.spacetimedb.com",
+      "spacetimedbDbName": "thamizh-chat",
+      "appName": "Thamizh",
+      "blueskyPublicApi": "https://public.api.bsky.app"
     },
     "owner": "thamizhaiorg"
   }

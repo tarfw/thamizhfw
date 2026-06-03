@@ -5,6 +5,7 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
@@ -55,6 +56,7 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <QueryClientProvider client={queryClientRef.current}>
         <ThemeProvider value={AppTheme}>
@@ -79,6 +81,7 @@ export default function RootLayout() {
               <Stack.Screen name="profile" options={{ headerShown: false }} />
               <Stack.Screen name="community" options={{ headerShown: false }} />
               <Stack.Screen name="roadmap" options={{ headerShown: false }} />
+              <Stack.Screen name="browser" options={{ headerShown: false }} />
               <Stack.Screen name="chats/private/new" options={{ headerShown: false, presentation: "modal" }} />
               <Stack.Screen name="chats/private/[id]/index" options={{ headerShown: false }} />
               <Stack.Screen name="chats/groups/index" options={{ headerShown: false }} />
@@ -86,13 +89,18 @@ export default function RootLayout() {
               <Stack.Screen name="chats/groups/[id]/index" options={{ headerShown: false }} />
               <Stack.Screen name="chats/groups/[id]/invite" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
+              <Stack.Screen name="compose" options={{ headerShown: false, presentation: "modal" }} />
+              <Stack.Screen name="post-thread" options={{ headerShown: false }} />
+              <Stack.Screen name="notifications" options={{ headerShown: false }} />
               <Stack.Screen name="agarathi" options={{ headerShown: false }} />
               <Stack.Screen name="tamil-tokenizer" options={{ headerShown: false }} />
+              <Stack.Screen name="blood" options={{ headerShown: false }} />
             </Stack>
 
           <StatusBar style="dark" />
         </ThemeProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

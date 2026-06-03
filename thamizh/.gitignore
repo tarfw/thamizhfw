@@ -31,12 +31,16 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# Android signing
+android/app/*.keystore
+android/keystore.properties
 
 # typescript
 *.tsbuildinfo
 
 app-example
 
-.env
 .claude/

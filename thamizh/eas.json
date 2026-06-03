@@ -6,18 +6,56 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SPACETIMEDB_HOST": "wss://maincloud.spacetimedb.com",
+        "EXPO_PUBLIC_SPACETIMEDB_DB_NAME": "thamizh-chat",
+        "EXPO_PUBLIC_APP_NAME": "Thamizh"
+      }
+    },
+    "internal-testing": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SPACETIMEDB_HOST": "wss://maincloud.spacetimedb.com",
+        "EXPO_PUBLIC_SPACETIMEDB_DB_NAME": "thamizh-chat",
+        "EXPO_PUBLIC_APP_NAME": "Thamizh"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SPACETIMEDB_HOST": "wss://maincloud.spacetimedb.com",
+        "EXPO_PUBLIC_SPACETIMEDB_DB_NAME": "thamizh-chat",
+        "EXPO_PUBLIC_APP_NAME": "Thamizh"
+      }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SPACETIMEDB_HOST": "wss://maincloud.spacetimedb.com",
+        "EXPO_PUBLIC_SPACETIMEDB_DB_NAME": "thamizh-chat",
+        "EXPO_PUBLIC_APP_NAME": "Thamizh"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
+      }
+    }
   }
 }

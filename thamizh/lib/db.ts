@@ -1,12 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DbConnection, tables, reducers } from "./module_bindings";
 import type { User, Message, GroupChat, GroupMember } from "./module_bindings/types";
+import { env } from "./env";
 
 export type { User, Message, GroupChat, GroupMember };
 export { tables, reducers };
 
-const DB_NAME = "thamizh-chat";
-const HOST = "wss://maincloud.spacetimedb.com";
+const DB_NAME = env.SPACETIMEDB_DB_NAME;
+const HOST = env.SPACETIMEDB_HOST;
 const TOKEN_KEY = `@spacetime_token_${DB_NAME}`;
 
 type Listener = () => void;

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter, Redirect } from "expo-router";
+import { Stack, useRouter, useLocalSearchParams, Redirect } from "expo-router";
 import React, { useState, useEffect, useCallback } from "react";
 import * as Haptics from "expo-haptics";
 import {
@@ -24,9 +24,13 @@ import { useSession } from "@/lib/auth";
 import { signOutBluesky } from "@/lib/bluesky-auth";
 import {
   fetchMyProfile,
+  fetchProfileByDid,
   fetchAuthorFeed,
+  fetchActorFeedByDid,
   fetchMyLikes,
   updateMyProfile,
+  followActor,
+  unfollowActor,
   type BskyProfile,
   type BskyFeedItem,
 } from "@/lib/bluesky-api";
@@ -96,6 +100,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isLoading: sessionLoading, user } = useSession();
+  const params = useLocalSearchParams<{ did?: string }>();
+  const viewerDid = params.did;
 
   const [showDrawer, setShowDrawer] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -122,19 +128,24 @@ export default function ProfileScreen() {
   const loadProfile = useCallback(async () => {
     try {
       setProfileError(null);
-      const p = await fetchMyProfile();
-      setBskyProfile(p);
+      if (viewerDid) {
+        const p = await fetchProfileByDid(viewerDid);
+        setBskyProfile(p);
+      } else {
+        const p = await fetchMyProfile();
+        setBskyProfile(p);
+      }
     } catch (e: any) {
       const msg = e?.message ?? "";
       setProfileError(msg);
-      if (/not signed in/i.test(msg)) {
+      if (!viewerDid && /not signed in/i.test(msg)) {
         router.replace("/sign-in?reconnect=bluesky");
         return;
       }
     } finally {
       setLoadingProfile(false);
     }
-  }, [router]);
+  }, [router, viewerDid]);
 
   const dedupeByUri = (feed: BskyFeedItem[]): BskyFeedItem[] => {
     const seen = new Set<string>();
@@ -150,14 +161,26 @@ export default function ProfileScreen() {
   const loadTab = useCallback(async (tab: TabKey) => {
     setFeedLoading(true);
     try {
+      const actor = viewerDid ?? (bskyProfile?.did || "");
+      if (!actor) return;
+      const isViewingSelf = !viewerDid;
+
       if (tab === "posts") {
-        setPosts(dedupeByUri(await fetchAuthorFeed("posts_no_replies", 50)));
+        const feed = isViewingSelf
+          ? await fetchAuthorFeed("posts_no_replies", 50)
+          : await fetchActorFeedByDid(actor, "posts_no_replies", 50);
+        setPosts(dedupeByUri(feed));
       } else if (tab === "replies") {
-        const feed = await fetchAuthorFeed("posts_with_replies", 50);
+        const feed = isViewingSelf
+          ? await fetchAuthorFeed("posts_with_replies", 50)
+          : await fetchActorFeedByDid(actor, "posts_with_replies", 50);
         setReplies(dedupeByUri(feed.filter((p) => p.isReply)));
       } else if (tab === "media") {
-        setMedia(dedupeByUri(await fetchAuthorFeed("posts_with_media", 50)));
-      } else if (tab === "likes") {
+        const feed = isViewingSelf
+          ? await fetchAuthorFeed("posts_with_media", 50)
+          : await fetchActorFeedByDid(actor, "posts_with_media", 50);
+        setMedia(dedupeByUri(feed));
+      } else if (tab === "likes" && isViewingSelf) {
         setLikes(dedupeByUri(await fetchMyLikes(50)));
       }
     } catch {
@@ -165,7 +188,7 @@ export default function ProfileScreen() {
     } finally {
       setFeedLoading(false);
     }
-  }, []);
+  }, [viewerDid, bskyProfile?.did]);
 
   useEffect(() => {
     loadProfile();
@@ -523,6 +546,62 @@ export default function ProfileScreen() {
         >
           @{bskyProfile.handle}
         </Text>
+
+        {/* Follow/Unfollow button — only when viewing another user */}
+        {viewerDid && bskyProfile.viewer ? (
+          <View style={{ flexDirection: "row", marginTop: 10 }}>
+            <Pressable
+              onPress={async () => {
+                const following = bskyProfile.viewer!.following;
+                try {
+                  if (following) {
+                    await unfollowActor(following);
+                    setBskyProfile((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            viewer: { ...prev.viewer!, following: undefined },
+                          }
+                        : null
+                    );
+                  } else {
+                    const rkey = await followActor(bskyProfile.did);
+                    setBskyProfile((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            viewer: { ...prev.viewer!, following: rkey },
+                          }
+                        : null
+                    );
+                  }
+                  loadProfile();
+                } catch {}
+              }}
+              style={({ pressed }) => ({
+                paddingHorizontal: 20,
+                paddingVertical: 8,
+                borderRadius: 20,
+                borderWidth: 1.5,
+                borderColor: bskyProfile.viewer.following ? "#E5E7EB" : ACCENT,
+                backgroundColor: bskyProfile.viewer.following
+                  ? "white"
+                  : ACCENT,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "600",
+                  color: bskyProfile.viewer.following ? TEXT : "white",
+                }}
+              >
+                {bskyProfile.viewer.following ? "Following" : "Follow"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {bskyProfile.description ? (
           <Text

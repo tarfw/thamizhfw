@@ -1,5 +1,9 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { Text, View } from "react-native";
+import { ResizeMode, Video } from "expo-av";
+import React, { useRef, useState } from "react";
+import { Linking, Modal, Platform, StatusBar, Text, View } from "react-native";
+import { Pressable } from "@/lib/Pressable";
 import { HAIRLINE, MUTED, SURFACE_ALT, TEXT } from "./theme";
 import type {
   BskyEmbedExternal,
@@ -7,6 +11,7 @@ import type {
   BskyFeedItem,
   BskyPostFacet,
   BskyPostImage,
+  BskyVideoEmbed,
 } from "./bluesky-api";
 
 export const LINK_BLUE = "#1d9bf0";
@@ -24,15 +29,17 @@ export function shortenUrl(url: string): string {
 }
 
 /**
- * Render a Bluesky post's text with mentions, links, and tags styled.
+ * Render a Bluesky post's text with tappable mentions, links, and tags.
  *
- * Prefers the structured `facets` array from the post record when available
- * (positions are byte offsets, which is what Bluesky uses), and falls back
- * to a regex split if facets are missing or malformed.
+ * Links open in the system browser.
+ * Mentions open the Bluesky profile in browser (in-app profile nav coming).
+ * Tags open a Bluesky search for that tag.
  *
  * `stripUrl` — if set, the URL that matches will be omitted from the output
- * (used when an external link card is rendered separately, to avoid showing
- * the same link twice).
+ * (used when an external link card is rendered separately).
+ *
+ * NOTE: Since this returns Pressable elements, the caller must render inside
+ * a `<View>` (not `<Text>`) to avoid React Native's nested text restriction.
  */
 export function renderRichText(
   text: string,
@@ -56,14 +63,37 @@ export function renderRichText(
     if (seg.kind === "link") {
       if (stripUrl && seg.value === stripUrl) return null;
       return (
-        <Text key={`f-${i}`} style={{ color: LINK_BLUE }}>
+        <Text
+          key={`f-${i}`}
+          onPress={() => Linking.openURL(seg.uri)}
+          style={{ color: LINK_BLUE, textDecorationLine: "underline" as const }}
+        >
+          {shortenUrl(seg.value)}
+        </Text>
+      );
+    }
+    if (seg.kind === "mention") {
+      return (
+        <Text
+          key={`f-${i}`}
+          onPress={() => Linking.openURL(`https://bsky.app/profile/${seg.did}`)}
+          style={{ color: LINK_BLUE }}
+        >
           {seg.value}
         </Text>
       );
     }
-    if (seg.kind === "mention" || seg.kind === "tag") {
+    if (seg.kind === "tag") {
       return (
-        <Text key={`f-${i}`} style={{ color: LINK_BLUE }}>
+        <Text
+          key={`f-${i}`}
+          onPress={() =>
+            Linking.openURL(
+              `https://bsky.app/search?q=${encodeURIComponent(seg.tag)}`
+            )
+          }
+          style={{ color: LINK_BLUE }}
+        >
           {seg.value}
         </Text>
       );
@@ -148,14 +178,41 @@ function fallbackSplit(
           return null;
         }
         return (
-          <Text key={`r-${i}`} style={{ color: LINK_BLUE }}>
+          <Text
+            key={`r-${i}`}
+            onPress={() => Linking.openURL(part)}
+            style={{ color: LINK_BLUE, textDecorationLine: "underline" as const }}
+          >
             {shortenUrl(part)}
           </Text>
         );
       }
-      if (part[0] === "#" || part[0] === "@") {
+      if (part[0] === "#") {
         return (
-          <Text key={`r-${i}`} style={{ color: LINK_BLUE }}>
+          <Text
+            key={`r-${i}`}
+            onPress={() =>
+              Linking.openURL(
+                `https://bsky.app/search?q=${encodeURIComponent(part.slice(1))}`
+              )
+            }
+            style={{ color: LINK_BLUE }}
+          >
+            {part}
+          </Text>
+        );
+      }
+      if (part[0] === "@") {
+        return (
+          <Text
+            key={`r-${i}`}
+            onPress={() =>
+              Linking.openURL(
+                `https://bsky.app/profile/${encodeURIComponent(part.slice(1))}`
+              )
+            }
+            style={{ color: LINK_BLUE }}
+          >
             {part}
           </Text>
         );
@@ -297,7 +354,138 @@ export function QuotedPostCard({
   );
 }
 
-export function ImageGrid({ images }: { images: BskyPostImage[] }) {
+export function VideoEmbed({ video }: { video: BskyVideoEmbed }) {
+  const [showPlayer, setShowPlayer] = useState(false);
+  if (!video?.playlist) return null;
+
+  const isGif = video.presentation === "gif";
+  const aspect = video.aspectRatio
+    ? video.aspectRatio.width / video.aspectRatio.height
+    : 16 / 9;
+
+  return (
+    <>
+      <Pressable
+        onPress={() => !isGif && setShowPlayer(true)}
+        style={{
+          marginTop: 8,
+          borderRadius: 10,
+          overflow: "hidden",
+          backgroundColor: SURFACE_ALT,
+          aspectRatio: aspect,
+        }}
+      >
+        {video.thumbnail ? (
+          <Image
+            source={{ uri: video.thumbnail }}
+            style={{ width: "100%", height: "100%" }}
+            contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
+          />
+        ) : null}
+        {!isGif ? (
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 24,
+                backgroundColor: "rgba(0,0,0,0.6)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="play" size={24} color="white" style={{ marginLeft: 2 }} />
+            </View>
+          </View>
+        ) : null}
+      </Pressable>
+
+      {showPlayer && (
+        <VideoPlayerModal
+          uri={video.playlist}
+          thumbnail={video.thumbnail}
+          onClose={() => setShowPlayer(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function VideoPlayerModal({
+  uri,
+  thumbnail,
+  onClose,
+}: {
+  uri: string;
+  thumbnail?: string;
+  onClose: () => void;
+}) {
+  const [status, setStatus] = useState<any>({});
+  const videoRef = useRef<any>(null);
+
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <View style={{ flex: 1, backgroundColor: "black", justifyContent: "center" }}>
+        <StatusBar barStyle="light-content" />
+        <Pressable
+          onPress={onClose}
+          style={{
+            position: "absolute",
+            top: Platform.OS === "ios" ? 56 : 40,
+            left: 12,
+            zIndex: 10,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="close" size={22} color="white" />
+        </Pressable>
+
+        <Video
+          ref={videoRef}
+          source={{ uri }}
+          style={{ width: "100%", aspectRatio: 16 / 9 }}
+          useNativeControls
+          resizeMode={ResizeMode.CONTAIN}
+          shouldPlay
+          onPlaybackStatusUpdate={setStatus}
+          posterSource={thumbnail ? { uri: thumbnail } : undefined}
+          posterStyle={{ resizeMode: "contain" }}
+        />
+      </View>
+    </Modal>
+  );
+}
+
+export function ImageGrid({
+  images,
+  onImagePress,
+}: {
+  images: BskyPostImage[];
+  onImagePress?: (index: number) => void;
+}) {
   if (!images || images.length === 0) return null;
   const shown = images.slice(0, 4);
   const count = shown.length;
@@ -324,13 +512,13 @@ export function ImageGrid({ images }: { images: BskyPostImage[] }) {
               ? "50%"
               : "33.333%";
         return (
-          <View
+          <Pressable
             key={`img-${idx}-${img.thumb}`}
+            onPress={() => onImagePress?.(idx)}
             style={{
               width: widthPct,
               aspectRatio: single ? 16 / 10 : 1,
               padding: 1,
-              boxSizing: "border-box" as any,
             }}
           >
             <Image
@@ -339,12 +527,13 @@ export function ImageGrid({ images }: { images: BskyPostImage[] }) {
                 width: "100%",
                 height: "100%",
                 backgroundColor: SURFACE_ALT,
+                borderRadius: 4,
               }}
               contentFit="cover"
               transition={120}
               cachePolicy="memory-disk"
             />
-          </View>
+          </Pressable>
         );
       })}
     </View>

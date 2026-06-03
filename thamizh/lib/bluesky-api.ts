@@ -4,6 +4,7 @@ import {
   saveSession,
   type BlueskySession,
 } from "./bluesky-auth";
+import { env } from "./env";
 
 export type BskyProfile = {
   did: string;
@@ -17,6 +18,10 @@ export type BskyProfile = {
   postsCount: number;
   createdAt: string | null;
   indexedAt: string | null;
+  viewer?: {
+    following?: string;
+    followedBy?: string;
+  };
 };
 
 export type BskyPostAuthor = {
@@ -62,10 +67,32 @@ export type BskyEmbedRecord = {
   value?: { text?: string; createdAt?: string };
 };
 
+export type BskyVideoEmbed = {
+  cid: string;
+  playlist: string;
+  thumbnail?: string;
+  alt?: string;
+  aspectRatio?: { width: number; height: number };
+  presentation?: "default" | "gif";
+};
+
 export type BskyEmbed = {
   images?: BskyPostImage[];
   external?: BskyEmbedExternal;
   record?: BskyEmbedRecord;
+  video?: BskyVideoEmbed;
+};
+
+export type BskySearchPost = {
+  uri: string;
+  cid: string;
+  author: BskyPostAuthor;
+  record: BskyPostRecord;
+  embed?: BskyEmbed;
+  replyCount: number;
+  repostCount: number;
+  likeCount: number;
+  indexedAt: string;
 };
 
 export type BskyFeedItem = {
@@ -86,7 +113,7 @@ export type BskyFeedItem = {
   likeCount: number;
 };
 
-const PUBLIC_API = "https://public.api.bsky.app";
+const PUBLIC_API = env.BLUESKY_PUBLIC_API;
 
 async function authedFetch(
   session: BlueskySession,
@@ -102,20 +129,29 @@ async function authedFetch(
     },
   });
 
-  if (res.status === 401) {
-    try {
-      current = await refreshSession(current);
-      await saveSession(current);
-    } catch {
-      throw new Error("Session expired — please sign in again");
+  if (res.status === 401 || res.status === 400) {
+    let needsRefresh = res.status === 401;
+    if (res.status === 400) {
+      try {
+        const body = await res.clone().json();
+        if (body?.error === "ExpiredToken") needsRefresh = true;
+      } catch {}
     }
-    res = await fetch(`${current.pdsUrl}${path}`, {
-      ...init,
-      headers: {
-        ...(init?.headers ?? {}),
-        Authorization: `Bearer ${current.accessJwt}`,
-      },
-    });
+    if (needsRefresh) {
+      try {
+        current = await refreshSession(current);
+        await saveSession(current);
+      } catch {
+        throw new Error("Session expired — please sign in again");
+      }
+      res = await fetch(`${current.pdsUrl}${path}`, {
+        ...init,
+        headers: {
+          ...(init?.headers ?? {}),
+          Authorization: `Bearer ${current.accessJwt}`,
+        },
+      });
+    }
   }
 
   return res;
@@ -131,6 +167,7 @@ export async function fetchMyProfile(): Promise<BskyProfile> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to load profile (${res.status})`);
   const data = await res.json();
+  const viewerData = data.viewer;
 
   return {
     did: data.did,
@@ -144,94 +181,75 @@ export async function fetchMyProfile(): Promise<BskyProfile> {
     postsCount: data.postsCount ?? 0,
     createdAt: data.createdAt ?? null,
     indexedAt: data.indexedAt ?? null,
+    viewer: viewerData
+      ? {
+          following: viewerData.following ?? undefined,
+          followedBy: viewerData.followedBy ?? undefined,
+        }
+      : undefined,
   };
 }
 
-function mapFeedView(view: any): BskyFeedItem | null {
-  const post = view?.post;
-  if (!post) return null;
-
-  const record = post.record ?? {};
-  const rawEmbed = post.embed ?? {};
-  const embedImages = (rawEmbed.images ?? []) as any[];
-
-  const reposter = view?.reason?.by;
-
+export async function fetchProfileByDid(
+  actor: string
+): Promise<BskyProfile> {
+  const url = `${PUBLIC_API}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load profile (${res.status})`);
+  const data = await res.json();
+  const viewerData = data.viewer;
   return {
-    uri: post.uri,
-    cid: post.cid,
-    indexedAt: post.indexedAt,
-    author: {
-      did: post.author?.did ?? "",
-      handle: post.author?.handle ?? "",
-      displayName: post.author?.displayName ?? post.author?.handle ?? "",
-      avatar: post.author?.avatar ?? null,
-    },
-    text: record.text ?? "",
-    record: {
-      text: record.text ?? "",
-      facets: record.facets,
-      createdAt: record.createdAt,
-      reply: record.reply,
-    },
-    embed: {
-      images: embedImages.length
-        ? embedImages.map((i) => ({
-            thumb: i.thumb,
-            fullsize: i.fullsize,
-            alt: i.alt ?? "",
-          }))
-        : undefined,
-      external: rawEmbed.external
-        ? {
-            uri: rawEmbed.external.uri,
-            title: rawEmbed.external.title,
-            description: rawEmbed.external.description,
-            thumb: rawEmbed.external.thumb,
-          }
-        : undefined,
-      record: rawEmbed.record
-        ? {
-            uri: rawEmbed.record.uri,
-            cid: rawEmbed.record.cid,
-            author: rawEmbed.record.author
-              ? {
-                  did: rawEmbed.record.author.did ?? "",
-                  handle: rawEmbed.record.author.handle ?? "",
-                  displayName:
-                    rawEmbed.record.author.displayName ??
-                    rawEmbed.record.author.handle ??
-                    "",
-                  avatar: rawEmbed.record.author.avatar ?? null,
-                }
-              : undefined,
-            value: rawEmbed.record.value
-              ? {
-                  text: rawEmbed.record.value.text,
-                  createdAt: rawEmbed.record.value.createdAt,
-                }
-              : undefined,
-          }
-        : undefined,
-    },
-    facets: record.facets,
-    isReply: !!record.reply,
-    isRepost: !!reposter,
-    repostedBy: reposter
+    did: data.did,
+    handle: data.handle,
+    displayName: data.displayName ?? data.handle,
+    description: data.description ?? "",
+    avatar: data.avatar ?? null,
+    banner: data.banner ?? null,
+    followersCount: data.followersCount ?? 0,
+    followsCount: data.followsCount ?? 0,
+    postsCount: data.postsCount ?? 0,
+    createdAt: data.createdAt ?? null,
+    indexedAt: data.indexedAt ?? null,
+    viewer: viewerData
       ? {
-          handle: reposter.handle,
-          displayName: reposter.displayName ?? reposter.handle,
+          following: viewerData.following ?? undefined,
+          followedBy: viewerData.followedBy ?? undefined,
         }
-      : null,
-    images: embedImages.map((i) => ({
-      thumb: i.thumb,
-      fullsize: i.fullsize,
-      alt: i.alt ?? "",
-    })),
-    replyCount: post.replyCount ?? 0,
-    repostCount: post.repostCount ?? 0,
-    likeCount: post.likeCount ?? 0,
+      : undefined,
   };
+}
+
+export async function fetchActorFeedByDid(
+  actor: string,
+  filter: "posts_with_replies" | "posts_no_replies" | "posts_with_media" | "posts_and_author_threads" = "posts_with_replies",
+  limit = 50
+): Promise<BskyFeedItem[]> {
+  const url = `${PUBLIC_API}/xrpc/app.bsky.feed.getAuthorFeed?actor=${encodeURIComponent(actor)}&filter=${filter}&limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load feed (${res.status})`);
+  const data = await res.json();
+  return ((data.feed ?? []) as any[])
+    .map(mapFeedView)
+    .filter((x): x is BskyFeedItem => x !== null);
+}
+
+export async function fetchTimeline(
+  limit = 30,
+  cursor?: string
+): Promise<{ posts: BskyFeedItem[]; cursor: string | null }> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+
+  let path = `/xrpc/app.bsky.feed.getTimeline?limit=${limit}`;
+  if (cursor) path += `&cursor=${encodeURIComponent(cursor)}`;
+
+  const res = await authedFetch(session, path);
+  if (!res.ok) throw new Error(`Failed to load timeline (${res.status})`);
+  const data = await res.json();
+  const posts = ((data.feed ?? []) as any[])
+    .map(mapFeedView)
+    .filter((x): x is BskyFeedItem => x !== null);
+  return { posts, cursor: data.cursor ?? null };
 }
 
 export async function fetchAuthorFeed(
@@ -331,4 +349,334 @@ export async function fetchMyLikes(limit = 50): Promise<BskyFeedItem[]> {
   return ((data.feed ?? []) as any[])
     .map(mapFeedView)
     .filter((x): x is BskyFeedItem => x !== null);
+}
+
+function uuidRkey(): string {
+  const hex = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let r = "";
+  for (let i = 0; i < 12; i++) r += hex[Math.floor(Math.random() * hex.length)];
+  return r;
+}
+
+export async function likePost(uri: string, cid: string): Promise<void> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const rkey = uuidRkey();
+  const record = {
+    $type: "app.bsky.feed.like",
+    subject: { uri, cid },
+    createdAt: new Date().toISOString(),
+  };
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.createRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.like", rkey, record }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Like failed (${res.status}): ${txt}`);
+  }
+}
+
+export async function unlikePost(likeRkey: string): Promise<void> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.deleteRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.like", rkey: likeRkey }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Unlike failed (${res.status}): ${txt}`);
+  }
+}
+
+export async function repostPost(uri: string, cid: string): Promise<string> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const rkey = uuidRkey();
+  const record = {
+    $type: "app.bsky.feed.repost",
+    subject: { uri, cid },
+    createdAt: new Date().toISOString(),
+  };
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.createRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.repost", rkey, record }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Repost failed (${res.status}): ${txt}`);
+  }
+  return rkey;
+}
+
+export async function unrepostPost(repostRkey: string): Promise<void> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.deleteRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.repost", rkey: repostRkey }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Unrepost failed (${res.status}): ${txt}`);
+  }
+}
+
+export async function replyToPost(
+  text: string,
+  parentUri: string,
+  parentCid: string,
+  rootUri: string,
+  rootCid: string,
+  facets?: BskyPostFacet[]
+): Promise<void> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const record: Record<string, unknown> = {
+    $type: "app.bsky.feed.post",
+    text,
+    reply: {
+      parent: { uri: parentUri, cid: parentCid },
+      root: { uri: rootUri, cid: rootCid },
+    },
+    createdAt: new Date().toISOString(),
+  };
+  if (facets) record.facets = facets;
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.createRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.post", record }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Reply failed (${res.status}): ${txt}`);
+  }
+}
+
+export async function findMyLike(
+  subjectUri: string
+): Promise<{ rkey: string; cid: string } | null> {
+  const session = await loadSession();
+  if (!session) return null;
+  const res = await authedFetch(
+    session,
+    `/xrpc/com.atproto.repo.listRecords?repo=${encodeURIComponent(session.did)}&collection=app.bsky.feed.like&limit=100`
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  for (const record of data.records ?? []) {
+    const val = record.value ?? {};
+    if (val.subject?.uri === subjectUri) {
+      const rkey = record.uri?.split("/").pop();
+      if (rkey) return { rkey, cid: record.cid ?? val.subject?.cid ?? "" };
+    }
+  }
+  return null;
+}
+
+export async function findMyRepost(
+  subjectUri: string
+): Promise<{ rkey: string; cid: string } | null> {
+  const session = await loadSession();
+  if (!session) return null;
+  const res = await authedFetch(
+    session,
+    `/xrpc/com.atproto.repo.listRecords?repo=${encodeURIComponent(session.did)}&collection=app.bsky.feed.repost&limit=100`
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  for (const record of data.records ?? []) {
+    const val = record.value ?? {};
+    if (val.subject?.uri === subjectUri) {
+      const rkey = record.uri?.split("/").pop();
+      if (rkey) return { rkey, cid: record.cid ?? val.subject?.cid ?? "" };
+    }
+  }
+  return null;
+}
+
+export type BskyThreadView = {
+  post: BskyFeedItem;
+  replies: BskyFeedItem[];
+};
+
+export async function getPostThread(
+  uri: string,
+  depth = 6
+): Promise<BskyThreadView | null> {
+  const url = `${PUBLIC_API}/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=${depth}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data = await res.json();
+  const thread = data.thread;
+  if (!thread?.post) return null;
+
+  const post = mapFeedView({ post: thread.post });
+  if (!post) return null;
+
+  const replies: BskyFeedItem[] = [];
+  const walk = (node: any) => {
+    if (!node) return;
+    if (node.replies) {
+      for (const r of node.replies) {
+        const mapped = mapFeedView(r);
+        if (mapped) replies.push(mapped);
+        walk(r);
+      }
+    }
+  };
+  walk(thread);
+
+  return { post, replies };
+}
+
+export type BskyNotification = {
+  uri: string;
+  cid: string;
+  author: BskyPostAuthor;
+  reason: "like" | "repost" | "follow" | "reply" | "quote";
+  reasonSubject?: string;
+  record?: BskyPostRecord;
+  isRead: boolean;
+  indexedAt: string;
+};
+
+export async function listNotifications(
+  limit = 50
+): Promise<{ notifications: BskyNotification[]; cursor: string | null }> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const res = await authedFetch(
+    session,
+    `/xrpc/app.bsky.notification.listNotifications?limit=${limit}`
+  );
+  if (!res.ok) throw new Error(`Failed to load notifications (${res.status})`);
+  const data = await res.json();
+  const notifications: BskyNotification[] = (data.notifications ?? []).map((n: any) => ({
+    uri: n.uri,
+    cid: n.cid,
+    author: {
+      did: n.author?.did ?? "",
+      handle: n.author?.handle ?? "",
+      displayName: n.author?.displayName ?? n.author?.handle ?? "",
+      avatar: n.author?.avatar ?? null,
+    },
+    reason: n.reason,
+    reasonSubject: n.reasonSubject,
+    record: n.record
+      ? {
+          text: n.record.text ?? "",
+          facets: n.record.facets,
+          createdAt: n.record.createdAt,
+        }
+      : undefined,
+    isRead: n.isRead ?? false,
+    indexedAt: n.indexedAt,
+  }));
+  return { notifications, cursor: data.cursor ?? null };
+}
+
+export type BskyFeedView = {
+  uri: string;
+  displayName: string;
+  avatar?: string;
+};
+
+export async function getAvailableFeeds(
+  actor: string
+): Promise<BskyFeedView[]> {
+  const url = `${PUBLIC_API}/xrpc/app.bsky.feed.getActorFeeds?actor=${encodeURIComponent(actor)}&limit=50`;
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.feeds ?? []).map((f: any) => ({
+    uri: f.uri,
+    displayName: f.displayName ?? "Untitled Feed",
+    avatar: f.avatar,
+  }));
+}
+
+export async function fetchCustomFeed(
+  feedUri: string,
+  limit = 30,
+  cursor?: string
+): Promise<{ posts: BskyFeedItem[]; cursor: string | null }> {
+  let url = `${PUBLIC_API}/xrpc/app.bsky.feed.getFeed?feed=${encodeURIComponent(feedUri)}&limit=${limit}`;
+  if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to load feed (${res.status})`);
+  const data = await res.json();
+  const posts = ((data.feed ?? []) as any[])
+    .map(mapFeedView)
+    .filter((x): x is BskyFeedItem => x !== null);
+  return { posts, cursor: data.cursor ?? null };
+}
+
+export async function followActor(did: string): Promise<string> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const rkey = uuidRkey();
+  const record = {
+    $type: "app.bsky.graph.follow",
+    subject: did,
+    createdAt: new Date().toISOString(),
+  };
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.createRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.graph.follow", rkey, record }),
+  });
+  if (!res.ok) throw new Error(`Follow failed (${res.status})`);
+  return rkey;
+}
+
+export async function unfollowActor(followUri: string): Promise<void> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const rkey = followUri.split("/").pop();
+  if (!rkey) throw new Error("Invalid follow URI");
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.deleteRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.graph.follow", rkey }),
+  });
+  if (!res.ok) throw new Error(`Unfollow failed (${res.status})`);
+}
+
+export async function createPost(
+  text: string,
+  embed?: Record<string, unknown>
+): Promise<void> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const record: Record<string, unknown> = {
+    $type: "app.bsky.feed.post",
+    text,
+    createdAt: new Date().toISOString(),
+  };
+  if (embed) record.embed = embed;
+  const res = await authedFetch(session, "/xrpc/com.atproto.repo.createRecord", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: session.did, collection: "app.bsky.feed.post", record }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Post failed (${res.status}): ${txt}`);
+  }
+}
+
+export async function sharePostUrl(uri: string): Promise<string> {
+  const parts = uri.replace("at://", "").split("/");
+  const did = parts[0];
+  const rkey = parts[2];
+  if (did && rkey) {
+    return `https://bsky.app/profile/${did}/post/${rkey}`;
+  }
+  return uri;
 }

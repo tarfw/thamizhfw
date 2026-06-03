@@ -1,13 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { FiveWingAsterisk } from "@/lib/FiveWingAsterisk";
 import { Stack, Link, Redirect, useRouter } from "expo-router";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  Share,
   Text,
   TextInput,
   View,
@@ -22,13 +23,28 @@ import { ts } from "@/lib/db";
 import { useSession, constituencies } from "@/lib/auth";
 import type { Message } from "@/lib/module_bindings/types";
 import { isGroupConvo, groupKind, type ConvoView } from "@/lib/bsky-chat";
+import type { BskySearchPost, BskyFeedItem } from "@/lib/bluesky-api";
+import { loadSession } from "@/lib/bluesky-auth";
+import {
+  likePost,
+  unlikePost,
+  repostPost,
+  unrepostPost,
+  findMyLike,
+  findMyRepost,
+  listNotifications,
+  sharePostUrl,
+} from "@/lib/bluesky-api";
 import Avatar from "@/lib/Avatar";
-import BrandLogo from "@/lib/BrandLogo";
 import {
   renderRichText,
   ExternalLinkCard,
+  ImageGrid,
+  VideoEmbed,
   QuotedPostCard,
 } from "@/lib/bskyPostRender";
+import ImageViewer from "@/lib/ImageViewer";
+import AppsList from "@/lib/AppsList";
 import {
   ACCENT,
   ACCENT_DARK,
@@ -67,6 +83,7 @@ type Row = {
 };
 
 type Tab = "feed" | "chats" | "spaces" | "apps";
+type BskyPost = BskySearchPost | BskyFeedItem;
 
 const EELAM_CONSTITUENCIES: Row[] = [
   {
@@ -149,10 +166,14 @@ export default function ConstituenciesIndex() {
   const [tab, setTab] = useState<Tab>("spaces");
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [activeLocation, setActiveLocation] = useState<"Tamilnadu" | "Eelam">("Tamilnadu");
-  const [bskyPosts, setBskyPosts] = useState<any[]>([]);
+  const [bskyPosts, setBskyPosts] = useState<BskyPost[]>([]);
   const [bskyLoading, setBskyLoading] = useState(false);
-  const [bskyUntil, setBskyUntil] = useState<string | null>(null);
+  const [bskyCursor, setBskyCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [bskyAuthed, setBskyAuthed] = useState(false);
+  const [notifUnreadTotal, setNotifUnreadTotal] = useState(0);
+  const [viewerImages, setViewerImages] = useState<{ uri: string; alt?: string }[] | null>(null);
+  const [viewerIndex, setViewerIndex] = useState(0);
 
   useEffect(() => {
     if (tab !== "feed") return;
@@ -160,7 +181,14 @@ export default function ConstituenciesIndex() {
     let active = true;
     const fetchFeed = async () => {
       setBskyLoading(true);
-      setBskyUntil(null);
+      setBskyCursor(null);
+      try {
+        const session = await loadSession();
+        if (active) setBskyAuthed(!!session);
+      } catch {
+        console.warn("Session load failed");
+      }
+
       try {
         const q = activeLocation === "Tamilnadu" ? "tamilnadu" : "eelam";
         const res = await fetch(
@@ -168,20 +196,17 @@ export default function ConstituenciesIndex() {
         );
         const json = await res.json();
         if (active && json.posts) {
+          const posts: BskyPost[] = json.posts.filter(
+            (p: any): p is BskyPost => !!p?.uri
+          );
           const seen = new Set<string>();
-          const unique = json.posts.filter((p: any) => {
-            if (!p?.uri || seen.has(p.uri)) return false;
+          const unique = posts.filter((p) => {
+            if (seen.has(p.uri)) return false;
             seen.add(p.uri);
             return true;
           });
           setBskyPosts(unique);
-          if (unique.length > 0) {
-            const oldest = unique[unique.length - 1];
-            const oldestDate = oldest.record?.createdAt || oldest.indexedAt;
-            setBskyUntil(oldestDate || null);
-          } else {
-            setBskyUntil(null);
-          }
+          setBskyCursor(json.cursor ?? null);
         }
       } catch (err) {
         console.error("Error fetching Bluesky feed:", err);
@@ -197,38 +222,58 @@ export default function ConstituenciesIndex() {
   }, [activeLocation, tab]);
 
   const loadMore = async () => {
-    if (loadingMore || !bskyUntil || tab !== "feed") return;
+    if (loadingMore || !bskyCursor || tab !== "feed") return;
     setLoadingMore(true);
+    let newPosts: BskyPost[] = [];
+
     try {
+      await loadSession();
       const q = activeLocation === "Tamilnadu" ? "tamilnadu" : "eelam";
       const res = await fetch(
-        `https://api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(q)}&limit=30&until=${encodeURIComponent(bskyUntil)}`
+        `https://api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(q)}&limit=30&cursor=${encodeURIComponent(bskyCursor)}`
       );
       const json = await res.json();
-      if (json.posts && json.posts.length > 0) {
-        setBskyPosts((prev) => {
-          const existingUris = new Set(prev.map(p => p.uri));
-          const seenLocal = new Set<string>();
-          const filteredNew = json.posts.filter((p: any) => {
-            if (!p?.uri) return false;
-            if (existingUris.has(p.uri) || seenLocal.has(p.uri)) return false;
-            seenLocal.add(p.uri);
-            return true;
-          });
-          return [...prev, ...filteredNew];
-        });
-        const oldest = json.posts[json.posts.length - 1];
-        const oldestDate = oldest.record?.createdAt || oldest.indexedAt;
-        setBskyUntil(oldestDate || null);
-      } else {
-        setBskyUntil(null);
+      if (json.posts) {
+        newPosts = json.posts.filter((p: any): p is BskyPost => !!p?.uri);
       }
+      setBskyCursor(json.cursor ?? null);
     } catch (err) {
       console.error("Error loading more Bluesky posts:", err);
-    } finally {
-      setLoadingMore(false);
     }
+
+    if (newPosts.length > 0) {
+      setBskyPosts((prev) => {
+        const existingUris = new Set(prev.map(p => p.uri));
+        const seenLocal = new Set<string>();
+        const filteredNew = newPosts.filter((p) => {
+          if (existingUris.has(p.uri) || seenLocal.has(p.uri)) return false;
+          seenLocal.add(p.uri);
+          return true;
+        });
+        return [...prev, ...filteredNew];
+      });
+    } else {
+      setBskyCursor(null);
+    }
+
+    setLoadingMore(false);
   };
+
+  useEffect(() => {
+    if (!bskyAuthed) { setNotifUnreadTotal(0); return; }
+    let active = true;
+    const check = async () => {
+      try {
+        const { notifications } = await listNotifications(20);
+        if (active) {
+          setNotifUnreadTotal(notifications.filter((n) => !n.isRead).length);
+        }
+      } catch {}
+    };
+    check();
+    const id = setInterval(check, 60000);
+    return () => { active = false; clearInterval(id); };
+  }, [bskyAuthed]);
 
   const [defaultLocation, setDefaultLocation] = useState<"Tamilnadu" | "Eelam" | null>(null);
 
@@ -428,9 +473,8 @@ export default function ConstituenciesIndex() {
           backgroundColor: "white",
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <FiveWingAsterisk size={28} color={ACCENT} />
-          
           <LocationSelector
             activeLocation={activeLocation}
             setActiveLocation={setActiveLocation}
@@ -439,22 +483,61 @@ export default function ConstituenciesIndex() {
           />
         </View>
 
-        <Pressable
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            router.push("/profile");
-          }}
-          hitSlop={8}
-          style={({ pressed }) => ({
-            opacity: pressed ? 0.7 : 1,
-          })}
-        >
-          <Avatar
-            name={profile?.displayName ?? "Me"}
-            size={34}
-            seed={user.id}
-          />
-        </Pressable>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          {tab === "feed" && bskyAuthed ? (
+            <>
+              <Pressable
+                onPress={() => router.push("/compose")}
+                hitSlop={8}
+                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+              >
+                <Ionicons name="create-outline" size={22} color={TEXT} />
+              </Pressable>
+              <Pressable
+                onPress={() => router.push("/notifications")}
+                hitSlop={8}
+                style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, position: "relative" })}
+              >
+                <Ionicons name="notifications-outline" size={22} color={TEXT} />
+                {notifUnreadTotal > 0 ? (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: -2,
+                    right: -4,
+                    width: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    backgroundColor: "#FF0050",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={{ color: "white", fontSize: 10, fontWeight: "700" }}>
+                    {notifUnreadTotal > 9 ? "9+" : notifUnreadTotal}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+            </>
+          ) : null}
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              router.push("/profile");
+            }}
+            hitSlop={8}
+            style={({ pressed }) => ({
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Avatar
+              name={profile?.displayName ?? "Me"}
+              size={34}
+              seed={user.id}
+            />
+          </Pressable>
+        </View>
       </View>
 
       {/* Search Bar */}
@@ -518,6 +601,11 @@ export default function ConstituenciesIndex() {
           refreshing={bskyLoading}
           onRefresh={async () => {
             setBskyLoading(true);
+            setBskyCursor(null);
+            try {
+              const session = await loadSession();
+              setBskyAuthed(!!session);
+            } catch {}
             try {
               const q = activeLocation === "Tamilnadu" ? "tamilnadu" : "eelam";
               const res = await fetch(
@@ -525,14 +613,9 @@ export default function ConstituenciesIndex() {
               );
               const json = await res.json();
               if (json.posts) {
-                setBskyPosts(json.posts);
-                if (json.posts.length > 0) {
-                  const oldest = json.posts[json.posts.length - 1];
-                  const oldestDate = oldest.record?.createdAt || oldest.indexedAt;
-                  setBskyUntil(oldestDate || null);
-                } else {
-                  setBskyUntil(null);
-                }
+                const posts = json.posts.filter((p: any): p is BskyPost => !!p?.uri);
+                setBskyPosts(posts);
+                setBskyCursor(json.cursor ?? null);
               }
             } catch (err) {
               console.error("Error refreshing Bluesky feed:", err);
@@ -545,11 +628,32 @@ export default function ConstituenciesIndex() {
             flexGrow: 1,
           }}
           ListEmptyComponent={
-            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 64 }}>
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 64, paddingHorizontal: 32 }}>
               {bskyLoading ? (
                 <ActivityIndicator color={ACCENT} />
+              ) : !bskyAuthed ? (
+                <>
+                  <Ionicons name="flame-outline" size={48} color={ACCENT} />
+                  <Text style={{ fontSize: 15, color: TEXT, marginTop: 12, textAlign: "center" }}>
+                    Sign in to Bluesky to see your timeline
+                  </Text>
+                  <Pressable
+                    onPress={() => router.push("/sign-in?reconnect=bluesky")}
+                    style={({ pressed }) => ({
+                      marginTop: 16,
+                      paddingHorizontal: 24,
+                      paddingVertical: 10,
+                      borderRadius: 20,
+                      backgroundColor: pressed ? ACCENT + "CC" : ACCENT,
+                    })}
+                  >
+                    <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>
+                      Sign in
+                    </Text>
+                  </Pressable>
+                </>
               ) : (
-                <Text style={{ fontSize: 13, color: MUTED }}>No updates in feed yet.</Text>
+                <Text style={{ fontSize: 13, color: MUTED }}>No posts in your feed yet.</Text>
               )}
             </View>
           }
@@ -563,7 +667,7 @@ export default function ConstituenciesIndex() {
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
           renderItem={({ item }) => (
-            <BskyFeedCard item={item} />
+            <BskyFeedCard item={item} onImagePress={(images, idx) => { setViewerImages(images); setViewerIndex(idx); }} />
           )}
         />
       ) : tab === "chats" ? (
@@ -666,63 +770,8 @@ export default function ConstituenciesIndex() {
             />
           )}
         />
-      ) : null}
-
-      {/* Apps tab */}
-      {tab === "apps" ? (
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingHorizontal: 16, paddingTop: 24 }}
-        >
-          <Pressable
-            onPress={() => router.push("/agarathi" as any)}
-            style={({ pressed }) => ({
-              backgroundColor: pressed ? SURFACE_HOVER : SURFACE_ALT,
-              borderRadius: 16,
-              padding: 20,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 16,
-              marginBottom: 12,
-              opacity: pressed ? 0.85 : 1,
-            })}
-          >
-            <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: ACCENT_SOFT, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="book" size={24} color={ACCENT} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 17, fontWeight: "700", color: TEXT, marginBottom: 2 }}>Agarathi</Text>
-              <Text style={{ fontSize: 13, color: MUTED, lineHeight: 18 }}>
-                Tamil dictionary powered by Sorkuvai — search any word for definitions, meanings and more.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={MUTED} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => router.push("/tamil-tokenizer" as any)}
-            style={({ pressed }) => ({
-              backgroundColor: pressed ? SURFACE_HOVER : SURFACE_ALT,
-              borderRadius: 16,
-              padding: 20,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 16,
-              opacity: pressed ? 0.85 : 1,
-            })}
-          >
-            <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: ACCENT_SOFT, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="text" size={24} color={ACCENT} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 17, fontWeight: "700", color: TEXT, marginBottom: 2 }}>Tamil Tokenizer</Text>
-              <Text style={{ fontSize: 13, color: MUTED, lineHeight: 18 }}>
-                Split Tamil text into tokens, analyze syllables, and explore word structure.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={MUTED} />
-          </Pressable>
-        </ScrollView>
+      ) : tab === "apps" ? (
+        <AppsList />
       ) : null}
 
       {/* New Message button (chats tab) */}
@@ -780,6 +829,7 @@ export default function ConstituenciesIndex() {
           label="Feed"
           icon="#"
           active={tab === "feed"}
+          badge={notifUnreadTotal}
           onPress={() => {
             if (tab !== "feed") setQuery("");
             setTab("feed");
@@ -805,6 +855,15 @@ export default function ConstituenciesIndex() {
           }}
         />
       </View>
+
+      {viewerImages ? (
+        <ImageViewer
+          images={viewerImages}
+          initialIndex={viewerIndex}
+          visible
+          onClose={() => setViewerImages(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -1058,136 +1117,272 @@ function FeedCard({ item }: { item: any }) {
   );
 }
 
-function BskyFeedCard({ item }: { item: any }) {
+function formatRelativeTime(iso: string): string {
+  const ms = new Date(iso).getTime();
+  if (!ms) return "";
+  const diff = Math.floor((Date.now() - ms) / 1000);
+  if (diff < 0) return "now";
+  if (diff < 60) return `${diff}s`;
+  const min = Math.floor(diff / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d`;
+  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+const BSKY_REPOST = "#00BA7C";
+const BSKY_LIKE = "#FF0050";
+
+function BskyFeedCard({ item, onImagePress }: { item: BskyPost; onImagePress?: (images: { uri: string; alt?: string }[], index: number) => void }) {
+  const router = useRouter();
   const author = item.author || {};
   const record = item.record || {};
-  const createdAt = Date.parse(record.createdAt || item.indexedAt || "");
-  const timeLabel = isNaN(createdAt) ? "" : formatTimestamp(createdAt);
+  const timeLabel = formatRelativeTime(item.indexedAt || record.createdAt || "");
   const displayName = author.displayName || author.handle || "Bluesky User";
   const handle = author.handle || "handle";
 
+  const [liked, setLiked] = useState(false);
+  const [reposted, setReposted] = useState(false);
+  const [likeCount, setLikeCount] = useState(item.likeCount ?? 0);
+  const [repostCount, setRepostCount] = useState(item.repostCount ?? 0);
+
+  useEffect(() => {
+    if (!item.uri) return;
+    let active = true;
+    const check = async () => {
+      const like = await findMyLike(item.uri);
+      if (active && like) setLiked(true);
+      const repost = await findMyRepost(item.uri);
+      if (active && repost) setReposted(true);
+    };
+    check();
+    return () => { active = false; };
+  }, [item.uri]);
+
+  const goToProfile = () => {
+    const did = author.did;
+    if (did) router.push(`/profile?did=${encodeURIComponent(did)}`);
+  };
+
+  const handleLike = async () => {
+    if (!item.cid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    try {
+      if (liked) {
+        const like = await findMyLike(item.uri);
+        if (like) await unlikePost(like.rkey);
+        setLiked(false);
+        setLikeCount((c) => Math.max(0, c - 1));
+      } else {
+        await likePost(item.uri, item.cid);
+        setLiked(true);
+        setLikeCount((c) => c + 1);
+      }
+    } catch (e) {
+      console.error("Like toggle failed", e);
+    }
+  };
+
+  const handleRepost = async () => {
+    if (!item.cid) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    try {
+      if (reposted) {
+        const repost = await findMyRepost(item.uri);
+        if (repost) await unrepostPost(repost.rkey);
+        setReposted(false);
+        setRepostCount((c) => Math.max(0, c - 1));
+      } else {
+        await repostPost(item.uri, item.cid);
+        setReposted(true);
+        setRepostCount((c) => c + 1);
+      }
+    } catch (e) {
+      console.error("Repost toggle failed", e);
+    }
+  };
+
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        paddingBottom: 8,
-        borderBottomWidth: 0.5,
-        borderBottomColor: HAIRLINE,
-        backgroundColor: "white",
+    <Pressable
+      onPress={() => {
+        if (item.uri) router.push(`/post-thread?uri=${encodeURIComponent(item.uri)}`);
       }}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        paddingHorizontal: 12,
+        paddingTop: 12,
+        paddingBottom: 4,
+        borderBottomWidth: 0.5,
+        borderBottomColor: "#E5E7EB",
+        backgroundColor: pressed ? "#F9FAFB" : "white",
+      })}
     >
       {/* Avatar column */}
-      <View style={{ width: 40, marginRight: 12 }}>
+      <Pressable onPress={goToProfile} style={{ width: 42, marginRight: 10 }}>
         {author.avatar ? (
           <Image
             source={{ uri: author.avatar }}
-            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: SURFACE_ALT }}
+            style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: "#E5E7EB" }}
             contentFit="cover"
             transition={120}
             cachePolicy="memory-disk"
           />
         ) : (
-          <Avatar name={displayName} size={40} seed={author.did || "bsky"} />
+          <Avatar name={displayName} size={42} seed={author.did || "bsky"} />
         )}
-      </View>
+      </Pressable>
 
       {/* Content column */}
       <View style={{ flex: 1, minWidth: 0 }}>
-        {/* Header line: name · @handle · time */}
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
+        {/* Header: display name + handle + time */}
+        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
           <Text
             numberOfLines={1}
-            style={{ fontSize: 14, fontWeight: "700", color: TEXT, maxWidth: "55%" }}
+            style={{ fontSize: 15, fontWeight: "600", color: "#1A1A1A", maxWidth: "50%" }}
           >
             {displayName}
           </Text>
           <Text
             numberOfLines={1}
-            style={{ fontSize: 13, color: MUTED, marginLeft: 4, flexShrink: 1 }}
+            style={{ fontSize: 14, color: "#8899A6", marginLeft: 4, flexShrink: 1 }}
           >
             @{handle}
           </Text>
           {timeLabel ? (
             <>
-              <Text style={{ fontSize: 13, color: MUTED, marginHorizontal: 4 }}>·</Text>
-              <Text style={{ fontSize: 13, color: MUTED }}>{timeLabel}</Text>
+              <Text style={{ fontSize: 14, color: "#8899A6", marginHorizontal: 4 }}>·</Text>
+              <Text style={{ fontSize: 14, color: "#8899A6" }}>{timeLabel}</Text>
             </>
           ) : null}
         </View>
 
-        {/* Body */}
+        {/* Post body */}
         {record.text ? (
-          <Text style={{ fontSize: 14, color: TEXT, lineHeight: 19, marginTop: 2 }}>
+          <Text style={{ fontSize: 15, color: "#1A1A1A", lineHeight: 21, letterSpacing: 0.1 }}>
             {renderRichText(record.text, record.facets, item.embed?.external?.uri)}
           </Text>
         ) : null}
 
-        {/* Embedded image */}
-        {item.embed?.images?.[0]?.thumb ? (
-          <Image
-            source={{ uri: item.embed.images[0].thumb }}
-            style={{
-              width: "100%",
-              height: 180,
-              borderRadius: 14,
-              marginTop: 8,
-              backgroundColor: SURFACE_ALT,
-              borderWidth: 0.5,
-              borderColor: HAIRLINE,
-            }}
-            contentFit="cover"
-            transition={120}
-            cachePolicy="memory-disk"
-          />
+        {/* Embedded images */}
+        {item.embed?.images && item.embed.images.length > 0 ? (
+          <View style={{ marginTop: 8 }}>
+            <ImageGrid
+              images={item.embed.images}
+              onImagePress={(idx) => {
+                const imgs = item.embed!.images!.map((img) => ({
+                  uri: img.fullsize || img.thumb,
+                  alt: img.alt,
+                }));
+                onImagePress?.(imgs, idx);
+              }}
+            />
+          </View>
+        ) : null}
+
+        {/* Video embed */}
+        {item.embed?.video ? (
+          <View style={{ marginTop: 8 }}><VideoEmbed video={item.embed.video} /></View>
         ) : null}
 
         {/* External link card */}
         {item.embed?.external ? (
-          <ExternalLinkCard external={item.embed.external} />
+          <View style={{ marginTop: 8 }}><ExternalLinkCard external={item.embed.external} /></View>
         ) : null}
 
         {/* Quoted post */}
         {item.embed?.record ? (
-          <QuotedPostCard record={item.embed.record} />
+          <View style={{ marginTop: 8 }}><QuotedPostCard record={item.embed.record} /></View>
         ) : null}
 
-        {/* Action row */}
+        {/* Action row — Bluesky-style: evenly spaced across full width */}
         <View
           style={{
             flexDirection: "row",
-            marginTop: 8,
-            marginLeft: -6,
+            marginTop: 6,
+            marginLeft: -8,
             alignItems: "center",
             justifyContent: "space-between",
-            maxWidth: 320,
+            paddingRight: 16,
           }}
         >
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons name="chatbubble-outline" size={15} color={MUTED} />
-            <Text style={{ fontSize: 12, color: MUTED, marginLeft: 6 }}>
-              {item.replyCount ?? 0}
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons name="repeat-outline" size={16} color={MUTED} />
-            <Text style={{ fontSize: 12, color: MUTED, marginLeft: 6 }}>
-              {item.repostCount ?? 0}
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons name="heart-outline" size={15} color={MUTED} />
-            <Text style={{ fontSize: 12, color: MUTED, marginLeft: 6 }}>
-              {item.likeCount ?? 0}
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons name="share-outline" size={15} color={MUTED} />
-          </View>
+          <ActionButton
+            icon={item.replyCount && item.replyCount > 0 ? "chatbubble" : "chatbubble-outline"}
+            count={item.replyCount ?? 0}
+            color="#8899A6"
+            activeColor="#8899A6"
+            onPress={() => {
+              if (item.uri) router.push(`/post-thread?uri=${encodeURIComponent(item.uri)}`);
+            }}
+          />
+          <ActionButton
+            icon={reposted ? "repeat" : "repeat-outline"}
+            count={repostCount}
+            color="#8899A6"
+            activeColor={BSKY_REPOST}
+            active={reposted}
+            onPress={handleRepost}
+          />
+          <ActionButton
+            icon={liked ? "heart" : "heart-outline"}
+            count={likeCount}
+            color="#8899A6"
+            activeColor={BSKY_LIKE}
+            active={liked}
+            onPress={handleLike}
+          />
+          <ActionButton
+            icon="share-outline"
+            color="#8899A6"
+            activeColor="#8899A6"
+            onPress={async () => {
+              const url = await sharePostUrl(item.uri);
+              Share.share({ url, message: url });
+            }}
+          />
         </View>
       </View>
-    </View>
+    </Pressable>
+  );
+}
+
+function ActionButton({
+  icon,
+  count,
+  color,
+  activeColor,
+  active,
+  onPress,
+}: {
+  icon: string;
+  count?: number;
+  color: string;
+  activeColor: string;
+  active?: boolean;
+  onPress: () => void;
+}) {
+  const c = active ? activeColor : color;
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRadius: 4,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Ionicons name={icon as any} size={16} color={c} />
+      {count !== undefined ? (
+        <Text style={{ fontSize: 12, color: c, marginLeft: 4, minWidth: 12 }}>
+          {count > 0 ? count : ""}
+        </Text>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -1286,16 +1481,14 @@ function formatTimestamp(t: number) {
 function LocationSelector({
   activeLocation,
   setActiveLocation,
-  defaultLocation,
-  saveDefaultLocation,
 }: any) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const options = [
-    { key: "Tamilnadu", label: "Tamil Nadu Community", memberCount: 5 },
-    { key: "Eelam", label: "Eelam Community", memberCount: 4 },
+    { key: "Tamilnadu", label: "Tamil Nadu Community" },
+    { key: "Eelam", label: "Eelam Community" },
   ];
 
   return (
@@ -1303,164 +1496,145 @@ function LocationSelector({
       <Pressable
         onPress={() => setOpen(true)}
         style={({ pressed }) => ({
-          flexDirection: "row",
-          alignItems: "center",
+          alignSelf: "flex-start",
+          backgroundColor: ACCENT + "12",
+          borderRadius: 16,
+          paddingHorizontal: 12,
+          paddingVertical: 5,
+          marginLeft: 4,
           opacity: pressed ? 0.7 : 1,
-          marginLeft: 10,
         })}
       >
-        <Text
-          style={{
-            fontSize: 16,
-            fontWeight: "700",
-            color: TEXT,
-            letterSpacing: -0.4,
-          }}
-        >
-          {activeLocation === "Tamilnadu" ? "Tamil Nadu Community" : "Eelam Community"}
+        <Text style={{ fontSize: 13, fontWeight: "500", color: ACCENT }}>
+          {activeLocation === "Tamilnadu" ? "Tamil Nadu" : "Eelam"}
         </Text>
-        <Ionicons name="chevron-down" size={14} color={TEXT} style={{ marginLeft: 5, marginTop: 1 }} />
       </Pressable>
 
-      <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "white", paddingTop: insets.top }}>
-          {/* Modal Header */}
+      <Modal
+        visible={open}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setOpen(false)}
+      >
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <Pressable
+            onPress={() => setOpen(false)}
+            style={{
+              position: "absolute",
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.4)",
+            }}
+          />
+
           <View
             style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
+              backgroundColor: "white",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingTop: 12,
               paddingHorizontal: 20,
-              paddingVertical: 16,
-              borderBottomWidth: 1,
-              borderBottomColor: HAIRLINE,
+              paddingBottom: Math.max(insets.bottom, 20) + 10,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: -4 },
+              shadowOpacity: 0.12,
+              shadowRadius: 8,
+              elevation: 10,
             }}
           >
-            <View>
-              <Text style={{ fontSize: 20, fontWeight: "800", color: TEXT, letterSpacing: -0.3 }}>
-                Select Community
-              </Text>
-              <Text style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
-                Long press to set as default community
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => setOpen(false)}
-              hitSlop={10}
-              style={({ pressed }) => ({
+            <View
+              style={{
                 width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: SURFACE_ALT,
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: pressed ? 0.7 : 1,
-              })}
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: HAIRLINE,
+                alignSelf: "center",
+                marginBottom: 24,
+              }}
+            />
+
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "700",
+                color: TEXT,
+                marginBottom: 8,
+              }}
             >
-              <Ionicons name="close" size={20} color={TEXT} />
-            </Pressable>
-          </View>
+              Select Community
+            </Text>
 
-          {/* Location Flat List */}
-          <View style={{ flex: 1 }}>
-            {options.map((opt) => {
-              const isActive = activeLocation === opt.key;
-              const isDefault = defaultLocation === opt.key;
+            <View style={{ gap: 4, marginBottom: 24 }}>
+              {options.map((opt) => {
+                const isActive = activeLocation === opt.key;
 
-              return (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => {
-                    setActiveLocation(opt.key);
-                    setOpen(false);
-                    router.push({
-                      pathname: "/community",
-                      params: { id: opt.key },
-                    });
-                  }}
-                  onLongPress={() => {
-                    saveDefaultLocation(opt.key as any);
-                  }}
-                  delayLongPress={350}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingHorizontal: 20,
-                    paddingVertical: 18,
-                    backgroundColor: pressed ? SURFACE_HOVER : "white",
-                    borderBottomWidth: 1,
-                    borderBottomColor: HAIRLINE,
-                  })}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                return (
+                  <Pressable
+                    key={opt.key}
+                    onPress={() => {
+                      setActiveLocation(opt.key);
+                      setOpen(false);
+                    }}
+                    style={({ pressed }) => ({
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      paddingVertical: 14,
+                      paddingHorizontal: 12,
+                      borderRadius: 10,
+                      backgroundColor: pressed ? SURFACE_HOVER : "transparent",
+                    })}
+                  >
                     <Text
                       style={{
-                        fontSize: 16,
-                        fontWeight: isActive ? "700" : "500",
+                        fontSize: 15,
+                        fontWeight: isActive ? "600" : "400",
                         color: isActive ? ACCENT : TEXT,
                       }}
                     >
                       {opt.label}
                     </Text>
-                    {isDefault && (
-                      <View
-                        style={{
-                          marginLeft: 8,
-                          backgroundColor: ACCENT_SOFT,
-                          paddingHorizontal: 6,
-                          paddingVertical: 2,
-                          borderRadius: 4,
-                        }}
-                      >
-                        <Text style={{ fontSize: 10, color: ACCENT, fontWeight: "600" }}>
-                          Default
-                        </Text>
-                      </View>
+                    {isActive && (
+                      <Ionicons name="checkmark-circle" size={20} color={ACCENT} />
                     )}
-                  </View>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      color: isActive ? ACCENT : MUTED,
-                      fontWeight: isActive ? "600" : "400",
-                    }}
-                  >
-                    {opt.memberCount} members
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Footer Roadmap Section */}
-          <View
-            style={{
-              paddingHorizontal: 20,
-              paddingBottom: Math.max(insets.bottom, 20),
-              paddingTop: 16,
-              borderTopWidth: 1,
-              borderTopColor: HAIRLINE,
-              backgroundColor: "white",
-            }}
-          >
             <Pressable
               onPress={() => {
                 setOpen(false);
-                router.push("/roadmap");
+                router.push({ pathname: "/community", params: { id: activeLocation } });
               }}
               style={({ pressed }) => ({
-                backgroundColor: SURFACE_ALT,
-                borderRadius: 12,
-                paddingVertical: 14,
+                flexDirection: "row",
                 alignItems: "center",
-                justifyContent: "center",
-                opacity: pressed ? 0.8 : 1,
+                gap: 8,
+                paddingVertical: 12,
+                paddingHorizontal: 12,
+                borderRadius: 10,
+                backgroundColor: pressed ? SURFACE_HOVER : "transparent",
               })}
             >
-              <Text style={{ fontSize: 15, fontWeight: "600", color: TEXT }}>
-                View Project Roadmap
+              <Ionicons name="people-outline" size={18} color={TEXT} />
+              <Text style={{ fontSize: 15, color: TEXT }}>View Members</Text>
+            </Pressable>
+
+            <View style={{ height: 12 }} />
+
+            <Pressable
+              onPress={() => {
+                setOpen(false);
+                router.push("/browser");
+              }}
+              hitSlop={8}
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.6 : 1,
+                alignSelf: "flex-start",
+              })}
+            >
+              <Text style={{ fontSize: 13, color: MUTED }}>
+                Thamizh docs
               </Text>
             </Pressable>
           </View>
