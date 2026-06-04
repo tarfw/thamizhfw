@@ -8,6 +8,7 @@ import { Pressable } from "@/lib/Pressable";
 import Avatar from "@/lib/Avatar";
 import {
   listNotifications,
+  updateSeen,
   type BskyNotification,
 } from "@/lib/bluesky-api";
 import { renderRichText } from "@/lib/bskyPostRender";
@@ -153,6 +154,7 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     load();
+    updateSeen().catch(() => {});
   }, [load]);
 
   const loadMore = async () => {

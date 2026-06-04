@@ -95,6 +95,8 @@ export default function RootLayout() {
               <Stack.Screen name="agarathi" options={{ headerShown: false }} />
               <Stack.Screen name="tamil-tokenizer" options={{ headerShown: false }} />
               <Stack.Screen name="blood" options={{ headerShown: false }} />
+              <Stack.Screen name="agents/human-rights" options={{ headerShown: false }} />
+              <Stack.Screen name="agents/[slug]" options={{ headerShown: false }} />
             </Stack>
 
           <StatusBar style="dark" />

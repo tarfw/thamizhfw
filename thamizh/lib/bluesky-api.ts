@@ -1,3 +1,4 @@
+import * as FileSystem from "expo-file-system/legacy";
 import {
   loadSession,
   refreshSession,
@@ -114,6 +115,111 @@ export type BskyFeedItem = {
 };
 
 const PUBLIC_API = env.BLUESKY_PUBLIC_API;
+
+function mapFeedView(item: any): BskyFeedItem | null {
+  if (!item) return null;
+  const post = item.post ?? item;
+  if (!post?.uri || !post?.author) return null;
+
+  const record = post.record ?? {};
+  const embed = post.embed ?? record.embed;
+
+  const isReply = !!(record.reply);
+  const reason = item.reason;
+  const isRepost = reason?.$type === "app.bsky.feed.defs#reasonRepost";
+
+  let repostedBy: { handle: string; displayName: string } | null = null;
+  if (isRepost && reason.by) {
+    repostedBy = {
+      handle: reason.by.handle ?? "",
+      displayName: reason.by.displayName ?? reason.by.handle ?? "",
+    };
+  }
+
+  const images: BskyPostImage[] = [];
+  const mappedEmbed: BskyEmbed = {};
+
+  if (embed) {
+    const t = embed.$type ?? "";
+    if (t === "app.bsky.embed.images" || embed.images) {
+      mappedEmbed.images = (embed.images ?? []).map((img: any) => ({
+        thumb: img.thumb ?? img.fullsize ?? "",
+        fullsize: img.fullsize ?? img.thumb ?? "",
+        alt: img.alt ?? "",
+      }));
+      if (mappedEmbed.images) images.push(...mappedEmbed.images);
+    }
+    if (t === "app.bsky.embed.external" || embed.external) {
+      mappedEmbed.external = {
+        uri: embed.external.uri ?? "",
+        title: embed.external.title ?? "",
+        description: embed.external.description ?? "",
+        thumb: embed.external.thumb ?? undefined,
+      };
+    }
+    if (t === "app.bsky.embed.record" || embed.record) {
+      const er = embed.record;
+      mappedEmbed.record = {
+        uri: er.uri ?? "",
+        cid: er.cid,
+        author: er.author
+          ? {
+              did: er.author.did ?? "",
+              handle: er.author.handle ?? "",
+              displayName: er.author.displayName ?? er.author.handle ?? "",
+              avatar: er.author.avatar ?? null,
+            }
+          : undefined,
+        value: er.value
+          ? {
+              text: er.value.text ?? "",
+              createdAt: er.value.createdAt,
+            }
+          : undefined,
+      };
+    }
+    if (t === "app.bsky.embed.video" || embed.playlist) {
+      mappedEmbed.video = {
+        cid: embed.cid ?? "",
+        playlist: embed.playlist ?? "",
+        thumbnail: embed.thumbnail,
+        alt: embed.alt,
+        aspectRatio: embed.aspectRatio,
+        presentation: embed.presentation,
+      };
+    }
+  }
+
+  return {
+    uri: post.uri,
+    cid: post.cid ?? "",
+    indexedAt: post.indexedAt ?? "",
+    author: {
+      did: post.author.did ?? "",
+      handle: post.author.handle ?? "",
+      displayName: post.author.displayName ?? post.author.handle ?? "",
+      avatar: post.author.avatar ?? null,
+    },
+    text: record.text ?? "",
+    record: record.text
+      ? {
+          text: record.text ?? "",
+          facets: record.facets,
+          createdAt: record.createdAt,
+          reply: record.reply,
+        }
+      : undefined,
+    embed: Object.keys(mappedEmbed).length > 0 ? mappedEmbed : undefined,
+    facets: record.facets,
+    isReply,
+    isRepost,
+    repostedBy,
+    images,
+    replyCount: post.replyCount ?? 0,
+    repostCount: post.repostCount ?? 0,
+    likeCount: post.likeCount ?? 0,
+  };
+}
 
 async function authedFetch(
   session: BlueskySession,
@@ -277,6 +383,8 @@ export async function fetchAuthorFeed(
 export async function updateMyProfile(updates: {
   displayName?: string;
   description?: string;
+  avatar?: { $type: string; ref: { $link: string }; mimeType: string; size: number } | null;
+  banner?: { $type: string; ref: { $link: string }; mimeType: string; size: number } | null;
 }): Promise<void> {
   const session = await loadSession();
   if (!session) throw new Error("Not signed in to Bluesky");
@@ -308,6 +416,8 @@ export async function updateMyProfile(updates: {
     nextValue.displayName = updates.displayName;
   if (updates.description !== undefined)
     nextValue.description = updates.description;
+  if (updates.avatar !== undefined) nextValue.avatar = updates.avatar;
+  if (updates.banner !== undefined) nextValue.banner = updates.banner;
 
   const body: Record<string, unknown> = {
     repo: session.did,
@@ -351,17 +461,24 @@ export async function fetchMyLikes(limit = 50): Promise<BskyFeedItem[]> {
     .filter((x): x is BskyFeedItem => x !== null);
 }
 
-function uuidRkey(): string {
-  const hex = "abcdefghijklmnopqrstuvwxyz0123456789";
+function tidRkey(): string {
+  const chars = "234567abcdefghijklmnopqrstuvwxyz";
+  const micros = BigInt(Date.now()) * 1000n;
+  const clockId = BigInt(Math.floor(Math.random() * 31) + 1);
+  const value = (micros << 5n) | clockId;
+  let n = value;
   let r = "";
-  for (let i = 0; i < 12; i++) r += hex[Math.floor(Math.random() * hex.length)];
+  for (let i = 0; i < 13; i++) {
+    r = chars[Number(n & 31n)] + r;
+    n >>= 5n;
+  }
   return r;
 }
 
 export async function likePost(uri: string, cid: string): Promise<void> {
   const session = await loadSession();
   if (!session) throw new Error("Not signed in to Bluesky");
-  const rkey = uuidRkey();
+  const rkey = tidRkey();
   const record = {
     $type: "app.bsky.feed.like",
     subject: { uri, cid },
@@ -395,7 +512,7 @@ export async function unlikePost(likeRkey: string): Promise<void> {
 export async function repostPost(uri: string, cid: string): Promise<string> {
   const session = await loadSession();
   if (!session) throw new Error("Not signed in to Bluesky");
-  const rkey = uuidRkey();
+  const rkey = tidRkey();
   const record = {
     $type: "app.bsky.feed.repost",
     subject: { uri, cid },
@@ -456,6 +573,17 @@ export async function replyToPost(
     const txt = await res.text();
     throw new Error(`Reply failed (${res.status}): ${txt}`);
   }
+}
+
+export async function quotePost(
+  text: string,
+  quotedUri: string,
+  quotedCid: string
+): Promise<void> {
+  await createPost(text, {
+    $type: "app.bsky.embed.record",
+    record: { uri: quotedUri, cid: quotedCid },
+  });
 }
 
 export async function findMyLike(
@@ -546,6 +674,23 @@ export type BskyNotification = {
   indexedAt: string;
 };
 
+export async function updateSeen(): Promise<void> {
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+  const res = await authedFetch(
+    session,
+    "/xrpc/app.bsky.notification.updateSeen",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seenAt: new Date().toISOString() }),
+    }
+  );
+  if (!res.ok && res.status !== 400) {
+    throw new Error(`Failed to mark notifications seen (${res.status})`);
+  }
+}
+
 export async function listNotifications(
   limit = 50
 ): Promise<{ notifications: BskyNotification[]; cursor: string | null }> {
@@ -620,7 +765,7 @@ export async function fetchCustomFeed(
 export async function followActor(did: string): Promise<string> {
   const session = await loadSession();
   if (!session) throw new Error("Not signed in to Bluesky");
-  const rkey = uuidRkey();
+  const rkey = tidRkey();
   const record = {
     $type: "app.bsky.graph.follow",
     subject: did,
@@ -668,6 +813,76 @@ export async function createPost(
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`Post failed (${res.status}): ${txt}`);
+  }
+}
+
+const ALLOWED_UPLOAD_MIME = ["video/mp4", "image/jpeg", "image/png", "image/webp"];
+
+export async function uploadBlob(
+  uri: string,
+  mimeType: string
+): Promise<{ $type: string; ref: { $link: string }; mimeType: string; size: number }> {
+  if (!ALLOWED_UPLOAD_MIME.includes(mimeType)) {
+    throw new Error(
+      `Unsupported file type "${mimeType}". Bluesky requires MP4 for video and JPEG/PNG/WebP for images.`
+    );
+  }
+  const session = await loadSession();
+  if (!session) throw new Error("Not signed in to Bluesky");
+
+  let current = session;
+  let url = `${current.pdsUrl}/xrpc/com.atproto.repo.uploadBlob`;
+
+  const doUpload = async (s: BlueskySession) => {
+    const result = await FileSystem.uploadAsync(url, uri, {
+      httpMethod: "POST",
+      headers: {
+        Authorization: `Bearer ${s.accessJwt}`,
+        "Content-Type": mimeType,
+      },
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    });
+    return result;
+  };
+
+  let result = await doUpload(current);
+
+  if (result.status === 401) {
+    try {
+      current = await refreshSession(current);
+      await saveSession(current);
+      url = `${current.pdsUrl}/xrpc/com.atproto.repo.uploadBlob`;
+      result = await doUpload(current);
+    } catch {
+      throw new Error("Session expired — please sign in again");
+    }
+  }
+
+  if (result.status !== 200) {
+    let msg = `Upload failed (${result.status})`;
+    try { const j = JSON.parse(result.body); if (j.message) msg = j.message; } catch {}
+    throw new Error(msg);
+  }
+
+  return JSON.parse(result.body).blob;
+}
+
+const _didHandleCache = new Map<string, string>();
+
+export async function resolveReplyAuthor(uri: string | undefined): Promise<string | null> {
+  if (!uri) return null;
+  const match = uri.match(/at:\/\/(did:\w+:\w+)\//);
+  if (!match) return null;
+  const did = match[1];
+  if (_didHandleCache.has(did)) return _didHandleCache.get(did)!;
+  try {
+    const profile = await fetchProfileByDid(did);
+    const handle = profile?.handle || null;
+    if (handle) _didHandleCache.set(did, handle);
+    return handle;
+  } catch {
+    _didHandleCache.set(did, did);
+    return did;
   }
 }
 

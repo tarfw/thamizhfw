@@ -51,7 +51,7 @@ function ImageViewerContent({
   onClose: () => void;
 }) {
   const [pageIndex, setPageIndex] = useState(initialIndex);
-  const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+  const [permissionGranted, setPermissionGranted] = useState(false);
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -133,14 +133,12 @@ function ImageViewerContent({
   const saveImage = async () => {
     if (!currentImage?.uri) return;
     try {
-      let perm = permissionResponse;
-      if (!perm?.granted) {
-        perm = await requestPermission();
-      }
+      let perm = permissionGranted ? { granted: true } : await MediaLibrary.requestPermissionsAsync();
       if (!perm?.granted) {
         Alert.alert("Permission needed", "Allow access to your photo library to save images.");
         return;
       }
+      setPermissionGranted(true);
       const ext = currentImage.uri.split(".").pop() || "jpg";
       const localUri = `${FileSystem.cacheDirectory}bsky_${Date.now()}.${ext}`;
       await FileSystem.downloadAsync(currentImage.uri, localUri);

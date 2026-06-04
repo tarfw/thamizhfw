@@ -2,7 +2,7 @@
   "expo": {
     "name": "Thamizh",
     "slug": "thamizh",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "thamizh",
@@ -17,12 +17,12 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#1A73E8"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.tarfw.thamizh",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE",
@@ -50,8 +50,9 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos to save images.",
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
           "savePhotosPermission": "Allow $(PRODUCT_NAME) to save images to your photo library.",
+          "audioPermission": "Allow $(PRODUCT_NAME) to access your audio.",
           "isAccessMediaLocationEnabled": true
         }
       ]

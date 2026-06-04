@@ -9,6 +9,7 @@ import {
   Modal,
   ScrollView,
   Share,
+  Switch,
   Text,
   TextInput,
   View,
@@ -25,11 +26,13 @@ import type { Message } from "@/lib/module_bindings/types";
 import { isGroupConvo, groupKind, type ConvoView } from "@/lib/bsky-chat";
 import type { BskySearchPost, BskyFeedItem } from "@/lib/bluesky-api";
 import { loadSession } from "@/lib/bluesky-auth";
+import { resolveReplyAuthor } from "@/lib/bluesky-api";
 import {
   likePost,
   unlikePost,
   repostPost,
   unrepostPost,
+  quotePost,
   findMyLike,
   findMyRepost,
   listNotifications,
@@ -196,9 +199,14 @@ export default function ConstituenciesIndex() {
         );
         const json = await res.json();
         if (active && json.posts) {
-          const posts: BskyPost[] = json.posts.filter(
-            (p: any): p is BskyPost => !!p?.uri
-          );
+          const posts: BskyPost[] = json.posts
+            .filter((p: any): p is BskyPost => !!p?.uri)
+            .map((p: any) => {
+              if (p?.embed?.$type === "app.bsky.embed.video" && !p.embed.video) {
+                return { ...p, embed: { ...p.embed, video: { cid: p.embed.cid ?? "", playlist: p.embed.playlist ?? "", thumbnail: p.embed.thumbnail, alt: p.embed.alt, aspectRatio: p.embed.aspectRatio, presentation: p.embed.presentation } } };
+              }
+              return p;
+            });
           const seen = new Set<string>();
           const unique = posts.filter((p) => {
             if (seen.has(p.uri)) return false;
@@ -234,7 +242,12 @@ export default function ConstituenciesIndex() {
       );
       const json = await res.json();
       if (json.posts) {
-        newPosts = json.posts.filter((p: any): p is BskyPost => !!p?.uri);
+        newPosts = json.posts.filter((p: any): p is BskyPost => !!p?.uri).map((p: any) => {
+          if (p?.embed?.$type === "app.bsky.embed.video" && !p.embed.video) {
+            return { ...p, embed: { ...p.embed, video: { cid: p.embed.cid ?? "", playlist: p.embed.playlist ?? "", thumbnail: p.embed.thumbnail, alt: p.embed.alt, aspectRatio: p.embed.aspectRatio, presentation: p.embed.presentation } } };
+          }
+          return p;
+        });
       }
       setBskyCursor(json.cursor ?? null);
     } catch (err) {
@@ -1137,11 +1150,20 @@ const BSKY_LIKE = "#FF0050";
 
 function BskyFeedCard({ item, onImagePress }: { item: BskyPost; onImagePress?: (images: { uri: string; alt?: string }[], index: number) => void }) {
   const router = useRouter();
-  const author = item.author || {};
-  const record = item.record || {};
+  const author: any = item.author || {};
+  const record: any = item.record || {};
   const timeLabel = formatRelativeTime(item.indexedAt || record.createdAt || "");
   const displayName = author.displayName || author.handle || "Bluesky User";
   const handle = author.handle || "handle";
+
+  const [parentHandle, setParentHandle] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!record.reply?.parent?.uri) return;
+    let active = true;
+    resolveReplyAuthor(record.reply.parent.uri).then((h) => { if (active) setParentHandle(h); });
+    return () => { active = false; };
+  }, [record.reply?.parent?.uri]);
 
   const [liked, setLiked] = useState(false);
   const [reposted, setReposted] = useState(false);
@@ -1236,6 +1258,16 @@ function BskyFeedCard({ item, onImagePress }: { item: BskyPost; onImagePress?: (
 
       {/* Content column */}
       <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Repost header */}
+        {(item as any).isRepost && (item as any).repostedBy ? (
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4, marginLeft: 0 }}>
+            <Ionicons name="repeat" size={12} color="#8899A6" />
+            <Text style={{ fontSize: 12, color: "#8899A6", marginLeft: 4 }}>
+              Reposted by {(item as any).repostedBy.displayName}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Header: display name + handle + time */}
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
           <Text
@@ -1258,10 +1290,17 @@ function BskyFeedCard({ item, onImagePress }: { item: BskyPost; onImagePress?: (
           ) : null}
         </View>
 
+        {/* Reply context */}
+        {record.reply || (item as any).isReply ? (
+          <Text style={{ fontSize: 13, color: "#8899A6", marginBottom: 2 }}>
+            Replying to {parentHandle ? `@${parentHandle}` : "a post"}
+          </Text>
+        ) : null}
+
         {/* Post body */}
         {record.text ? (
           <Text style={{ fontSize: 15, color: "#1A1A1A", lineHeight: 21, letterSpacing: 0.1 }}>
-            {renderRichText(record.text, record.facets, item.embed?.external?.uri)}
+            {renderRichText(record.text, record.facets, item.embed?.external?.uri, (did) => router.push(`/profile?did=${encodeURIComponent(did)}`))}
           </Text>
         ) : null}
 
@@ -1323,6 +1362,16 @@ function BskyFeedCard({ item, onImagePress }: { item: BskyPost; onImagePress?: (
             activeColor={BSKY_REPOST}
             active={reposted}
             onPress={handleRepost}
+          />
+          <ActionButton
+            icon="chatbox-ellipses-outline"
+            color="#8899A6"
+            activeColor="#8899A6"
+            onPress={() => {
+              if (item.uri && item.cid) {
+                router.push(`/compose?quoteUri=${encodeURIComponent(item.uri)}&quoteCid=${encodeURIComponent(item.cid)}`);
+              }
+            }}
           />
           <ActionButton
             icon={liked ? "heart" : "heart-outline"}
@@ -1481,6 +1530,8 @@ function formatTimestamp(t: number) {
 function LocationSelector({
   activeLocation,
   setActiveLocation,
+  defaultLocation,
+  saveDefaultLocation,
 }: any) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -1566,6 +1617,7 @@ function LocationSelector({
             <View style={{ gap: 4, marginBottom: 24 }}>
               {options.map((opt) => {
                 const isActive = activeLocation === opt.key;
+                const isDefault = defaultLocation === opt.key;
 
                 return (
                   <Pressable
@@ -1574,6 +1626,10 @@ function LocationSelector({
                       setActiveLocation(opt.key);
                       setOpen(false);
                     }}
+                    onLongPress={() => {
+                      saveDefaultLocation(opt.key);
+                    }}
+                    delayLongPress={400}
                     style={({ pressed }) => ({
                       flexDirection: "row",
                       alignItems: "center",
@@ -1593,12 +1649,20 @@ function LocationSelector({
                     >
                       {opt.label}
                     </Text>
-                    {isActive && (
-                      <Ionicons name="checkmark-circle" size={20} color={ACCENT} />
-                    )}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Switch
+                        value={isDefault}
+                        onValueChange={() => saveDefaultLocation(opt.key)}
+                        trackColor={{ false: HAIRLINE, true: ACCENT_SOFT }}
+                        thumbColor={isDefault ? ACCENT : MUTED}
+                      />
+                    </View>
                   </Pressable>
                 );
               })}
+              <Text style={{ fontSize: 11, color: MUTED, paddingHorizontal: 12 }}>
+                Long-press or toggle switch to set default community
+              </Text>
             </View>
 
             <Pressable

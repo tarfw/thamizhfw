@@ -80,6 +80,7 @@ function PostRow({
   onReply: () => void;
   onImagePress?: (images: { uri: string; alt?: string }[], index: number) => void;
 }) {
+  const router = useRouter();
   const author = item.author || {};
   const record = item.record || {};
   const [liked, setLiked] = useState(false);
@@ -165,7 +166,7 @@ function PostRow({
 
           {record.text ? (
             <Text style={{ fontSize: 15, color: TEXT, lineHeight: 20, marginTop: 3 }}>
-              {renderRichText(record.text, record.facets)}
+              {renderRichText(record.text, record.facets, undefined, (did) => router.push(`/profile?did=${encodeURIComponent(did)}`))}
             </Text>
           ) : null}
 

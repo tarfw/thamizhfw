@@ -44,7 +44,8 @@ export function shortenUrl(url: string): string {
 export function renderRichText(
   text: string,
   facets?: BskyPostFacet[],
-  stripUrl?: string
+  stripUrl?: string,
+  onNavigateToProfile?: (did: string) => void
 ): (string | React.ReactElement | null)[] {
   if (!text) return [];
 
@@ -76,7 +77,13 @@ export function renderRichText(
       return (
         <Text
           key={`f-${i}`}
-          onPress={() => Linking.openURL(`https://bsky.app/profile/${seg.did}`)}
+          onPress={() => {
+            if (onNavigateToProfile) {
+              onNavigateToProfile(seg.did);
+            } else {
+              Linking.openURL(`https://bsky.app/profile/${seg.did}`);
+            }
+          }}
           style={{ color: LINK_BLUE }}
         >
           {seg.value}

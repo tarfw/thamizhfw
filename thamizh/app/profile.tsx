@@ -2,8 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams, Redirect } from "expo-router";
 import React, { useState, useEffect, useCallback } from "react";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import {
   ActivityIndicator,
+  Alert,
   Clipboard,
   FlatList,
   KeyboardAvoidingView,
@@ -29,8 +31,10 @@ import {
   fetchActorFeedByDid,
   fetchMyLikes,
   updateMyProfile,
+  uploadBlob,
   followActor,
   unfollowActor,
+  resolveReplyAuthor,
   type BskyProfile,
   type BskyFeedItem,
 } from "@/lib/bluesky-api";
@@ -39,6 +43,7 @@ import {
   ExternalLinkCard,
   ImageGrid,
   QuotedPostCard,
+  VideoEmbed,
 } from "@/lib/bskyPostRender";
 import Avatar from "@/lib/Avatar";
 import {
@@ -113,6 +118,8 @@ export default function ProfileScreen() {
   const [editBio, setEditBio] = useState("");
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [editAvatarUri, setEditAvatarUri] = useState<string | null>(null);
+  const [editBannerUri, setEditBannerUri] = useState<string | null>(null);
 
   const [bskyProfile, setBskyProfile] = useState<BskyProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -230,6 +237,8 @@ export default function ProfileScreen() {
     setEditName(bskyProfile.displayName ?? "");
     setEditBio(bskyProfile.description ?? "");
     setEditError(null);
+    setEditAvatarUri(null);
+    setEditBannerUri(null);
     setShowDrawer(false);
     setIsEditing(true);
   };
@@ -253,7 +262,20 @@ export default function ProfileScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
     try {
-      await updateMyProfile({ displayName: name, description: bio });
+      let avatarBlob: any = undefined;
+      let bannerBlob: any = undefined;
+      if (editAvatarUri) {
+        avatarBlob = await uploadBlob(editAvatarUri, "image/jpeg");
+      }
+      if (editBannerUri) {
+        bannerBlob = await uploadBlob(editBannerUri, "image/jpeg");
+      }
+      await updateMyProfile({
+        displayName: name,
+        description: bio,
+        avatar: avatarBlob,
+        banner: bannerBlob,
+      });
       setBskyProfile({
         ...bskyProfile,
         displayName: name || bskyProfile.handle,
@@ -793,6 +815,29 @@ export default function ProfileScreen() {
         contentContainerStyle={{ backgroundColor: "white" }}
       />
 
+      {/* New Post FAB — like Bluesky */}
+      <Pressable
+        onPress={() => router.push("/compose")}
+        style={({ pressed }) => ({
+          position: "absolute",
+          bottom: Math.max(insets.bottom, 12) + 16,
+          right: 20,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: pressed ? "#1557b0" : ACCENT,
+          alignItems: "center",
+          justifyContent: "center",
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 8,
+          elevation: 8,
+        })}
+      >
+        <Ionicons name="create-outline" size={24} color="white" />
+      </Pressable>
+
       {/* Drawer */}
       <Modal
         visible={showDrawer}
@@ -1216,6 +1261,70 @@ export default function ProfileScreen() {
                 />
               </View>
 
+              {/* Avatar picker */}
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontSize: 11, fontWeight: "600", color: MUTED, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+                  Avatar
+                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  {editAvatarUri ? (
+                    <Image source={{ uri: editAvatarUri }} style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: SURFACE_ALT }} contentFit="cover" />
+                  ) : bskyProfile?.avatar ? (
+                    <Image source={{ uri: bskyProfile.avatar }} style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: SURFACE_ALT }} contentFit="cover" />
+                  ) : null}
+                  <Pressable
+                    onPress={async () => {
+                      const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                      if (!granted) { Alert.alert("Permission required", "Photo library access needed."); return; }
+                      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: false, quality: 0.8 });
+                      if (!result.canceled) setEditAvatarUri(result.assets[0].uri);
+                    }}
+                    style={({ pressed }) => ({
+                      paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: BORDER_IDLE, opacity: pressed ? 0.6 : 1,
+                    })}
+                  >
+                    <Text style={{ fontSize: 13, color: ACCENT, fontWeight: "600" }}>Choose Photo</Text>
+                  </Pressable>
+                  {editAvatarUri ? (
+                    <Pressable onPress={() => setEditAvatarUri(null)} hitSlop={8}>
+                      <Text style={{ fontSize: 13, color: DANGER }}>Remove</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Banner picker */}
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontSize: 11, fontWeight: "600", color: MUTED, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+                  Banner
+                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  {editBannerUri ? (
+                    <Image source={{ uri: editBannerUri }} style={{ width: 120, height: 60, borderRadius: 8, backgroundColor: SURFACE_ALT }} contentFit="cover" />
+                  ) : bskyProfile?.banner ? (
+                    <Image source={{ uri: bskyProfile.banner }} style={{ width: 120, height: 60, borderRadius: 8, backgroundColor: SURFACE_ALT }} contentFit="cover" />
+                  ) : null}
+                  <Pressable
+                    onPress={async () => {
+                      const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                      if (!granted) { Alert.alert("Permission required", "Photo library access needed."); return; }
+                      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: false, quality: 0.8 });
+                      if (!result.canceled) setEditBannerUri(result.assets[0].uri);
+                    }}
+                    style={({ pressed }) => ({
+                      paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: BORDER_IDLE, opacity: pressed ? 0.6 : 1,
+                    })}
+                  >
+                    <Text style={{ fontSize: 13, color: ACCENT, fontWeight: "600" }}>Choose Photo</Text>
+                  </Pressable>
+                  {editBannerUri ? (
+                    <Pressable onPress={() => setEditBannerUri(null)} hitSlop={8}>
+                      <Text style={{ fontSize: 13, color: DANGER }}>Remove</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+
               <View style={{ marginBottom: 20 }}>
                 <View
                   style={{
@@ -1279,16 +1388,29 @@ export default function ProfileScreen() {
 
 function PostRow({ item }: { item: BskyFeedItem }) {
   const avatarSize = 40;
+  const prRouter = useRouter();
+  const [parentHandle, setParentHandle] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!item.record?.reply?.parent?.uri) return;
+    let active = true;
+    resolveReplyAuthor(item.record.reply.parent.uri).then((h) => { if (active) setParentHandle(h); });
+    return () => { active = false; };
+  }, [item.record?.reply?.parent?.uri]);
+
   return (
-    <View
-      style={{
+    <Pressable
+      onPress={() => {
+        if (item.uri) prRouter.push(`/post-thread?uri=${encodeURIComponent(item.uri)}`);
+      }}
+      style={({ pressed }) => ({
         paddingHorizontal: 16,
         paddingTop: 12,
         paddingBottom: 14,
         borderBottomWidth: 1,
         borderBottomColor: HAIRLINE,
-        backgroundColor: "white",
-      }}
+        backgroundColor: pressed ? "#F9FAFB" : "white",
+      })}
     >
       {item.isRepost && item.repostedBy ? (
         <View
@@ -1369,7 +1491,7 @@ function PostRow({ item }: { item: BskyFeedItem }) {
           {/* Reply indicator */}
           {item.isReply ? (
             <Text style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
-              Replying to a post
+              Replying to {parentHandle ? `@${parentHandle}` : "a post"}
             </Text>
           ) : null}
 
@@ -1387,7 +1509,8 @@ function PostRow({ item }: { item: BskyFeedItem }) {
                 {renderRichText(
                   item.text,
                   item.record?.facets,
-                  item.embed?.external?.uri
+                  item.embed?.external?.uri,
+                  (did) => prRouter.push(`/profile?did=${encodeURIComponent(did)}`)
                 )}
               </Text>
             </View>
@@ -1398,6 +1521,11 @@ function PostRow({ item }: { item: BskyFeedItem }) {
             <ImageGrid images={item.embed.images} />
           ) : item.images && item.images.length > 0 ? (
             <ImageGrid images={item.images} />
+          ) : null}
+
+          {/* Video embed */}
+          {item.embed?.video ? (
+            <VideoEmbed video={item.embed.video} />
           ) : null}
 
           {/* External link card */}
@@ -1442,6 +1570,6 @@ function PostRow({ item }: { item: BskyFeedItem }) {
           </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
