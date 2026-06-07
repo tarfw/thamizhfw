@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Thamizhi Dashboard",
+    "slug": "thamizhi-dashboard",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "thamizhi",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tarfw.thamizhi"
+    },
+    "android": {
+      "package": "com.tarfw.thamizhi"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

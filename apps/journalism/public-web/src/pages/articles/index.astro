@@ -1,0 +1,59 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getStorage } from '@tamilfw/core';
+import type { Article } from '@tamilfw/core/journalism';
+
+let articles: Article[] = [];
+try {
+  const storage = getStorage();
+  const result = await storage.listArticles({
+    limit: 100,
+    offset: 0,
+    status: 'published',
+    sortBy: 'publishedAt',
+    sortOrder: 'desc',
+  });
+  articles = result.articles;
+} catch (err) {
+  articles = [];
+}
+---
+<BaseLayout
+  title="All Articles"
+  description="Browse all published investigative articles from Thamizhi."
+>
+  <header class="mb-12">
+    <h1 class="text-4xl font-bold text-white mb-4">All Articles</h1>
+    <p class="text-gray-400">{articles.length} published articles</p>
+  </header>
+
+  {articles.length === 0 ? (
+    <div class="border border-gray-800 rounded-lg p-12 text-center">
+      <p class="text-gray-500">No articles yet.</p>
+    </div>
+  ) : (
+    <div class="space-y-6">
+      {articles.map((article) => (
+        <a
+          href={`/articles/${article.slug}`}
+          class="block border-b border-gray-800 pb-6 hover:border-[#00D4AA] transition group"
+        >
+          <div class="flex items-center gap-2 mb-2 text-xs">
+            {article.category && (
+              <span class="px-2 py-1 bg-blue-900/30 text-blue-300 rounded font-mono uppercase">
+                {article.category}
+              </span>
+            )}
+            <time class="text-gray-500 font-mono">
+              {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString() : 'draft'}
+            </time>
+          </div>
+          <h2 class="text-2xl font-bold text-white mb-2 group-hover:text-[#00D4AA] transition">
+            {article.title}
+          </h2>
+          <p class="text-gray-400 leading-relaxed">{article.excerpt}</p>
+        </a>
+      ))}
+    </div>
+  )}
+</BaseLayout>

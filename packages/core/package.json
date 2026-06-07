@@ -1,0 +1,27 @@
+{
+  "name": "@tamilfw/core",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./journalism": "./src/journalism/index.ts",
+    "./identity": "./src/identity/index.ts",
+    "./p2p": "./src/p2p/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "db:push": "tsx scripts/push-schema.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

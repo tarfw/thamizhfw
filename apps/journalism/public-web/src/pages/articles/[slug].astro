@@ -1,0 +1,109 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getStorage } from '@tamilfw/core';
+import type { Article, Entity } from '@tamilfw/core/journalism';
+
+export async function getStaticPaths() {
+  let articles: Article[] = [];
+  try {
+    const storage = getStorage();
+    const result = await storage.listArticles({
+      limit: 1000,
+      offset: 0,
+      status: 'published',
+    });
+    articles = result.articles;
+  } catch (err) {
+    articles = [];
+  }
+  return articles.map((article) => ({
+    params: { slug: article.slug },
+    props: { article },
+  }));
+}
+
+const { article } = Astro.props as { article: Article };
+let entities: Entity[] = [];
+try {
+  const storage = getStorage();
+  if (article.entities) {
+    const loaded = await Promise.all(
+      article.entities.map((ref) => storage.getEntityById(ref.id))
+    );
+    entities = loaded.filter((e): e is Entity => e !== null);
+  }
+} catch (err) {
+  entities = [];
+}
+
+const formatDate = (ts: number | null) => {
+  if (!ts) return 'Unpublished';
+  return new Date(ts).toISOString();
+};
+---
+<BaseLayout
+  title={article.title}
+  description={article.excerpt}
+  type="article"
+  publishedTime={formatDate(article.publishedAt)}
+  modifiedTime={formatDate(article.updatedAt)}
+  author={article.authorId || 'Thamizhi Editorial'}
+>
+  <article class="max-w-3xl mx-auto">
+    <header class="mb-12 pb-8 border-b border-gray-800">
+      <div class="flex items-center gap-2 mb-4 text-xs">
+        {article.category && (
+          <span class="px-2 py-1 bg-blue-900/30 text-blue-300 rounded font-mono uppercase">
+            {article.category}
+          </span>
+        )}
+        <time class="text-gray-500 font-mono">
+          {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'draft'}
+        </time>
+      </div>
+
+      <h1 class="text-4xl md:text-5xl font-bold text-white leading-tight mb-4">
+        {article.title}
+      </h1>
+
+      {article.excerpt && (
+        <p class="text-xl text-gray-400 leading-relaxed italic">
+          {article.excerpt}
+        </p>
+      )}
+    </header>
+
+    <div class="prose prose-invert prose-lg max-w-none text-gray-300 leading-relaxed">
+      {article.body.split('\n\n').map((paragraph) => (
+        <p class="mb-6">{paragraph}</p>
+      ))}
+    </div>
+
+    {article.sourceUrl && (
+      <div class="mt-8 p-4 border border-gray-800 rounded bg-gray-900/50">
+        <p class="text-gray-500 text-xs font-mono uppercase mb-1">Primary Source</p>
+        <a href={article.sourceUrl} target="_blank" rel="noopener noreferrer" class="text-[#00D4AA] text-sm font-mono break-all hover:underline">
+          {article.sourceUrl} →
+        </a>
+      </div>
+    )}
+
+    {entities.length > 0 && (
+      <aside class="mt-12 p-6 border border-gray-800 rounded-lg bg-[#111827]">
+        <h2 class="text-sm font-mono uppercase tracking-wider text-gray-500 mb-4">
+          People & Organizations Mentioned
+        </h2>
+        <div class="flex flex-wrap gap-2">
+          {entities.map((entity) => (
+            <a
+              href={`/entities/${entity.id}`}
+              class="px-3 py-1.5 bg-[#1F2937] border border-gray-700 text-gray-300 text-sm rounded hover:border-[#00D4AA] hover:text-white transition"
+            >
+              {entity.name}
+            </a>
+          ))}
+        </div>
+      </aside>
+    )}
+  </article>
+</BaseLayout>
