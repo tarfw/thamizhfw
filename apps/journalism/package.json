@@ -1,9 +1,0 @@
-{
-  "name": "@tamilfw/journalism",
-  "version": "0.0.1",
-  "private": true,
-  "scripts": {
-    "dev": "echo \"journalism app not yet initialized\"",
-    "build": "echo \"journalism app not yet initialized\""
-  }
-}

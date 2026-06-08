@@ -1,5 +1,17 @@
 import { config } from 'dotenv';
-config();
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const envPath = resolve(__dirname, '../../../.env');
+console.log('Loading .env from:', envPath);
+console.log('Exists:', existsSync(envPath));
+config({ path: envPath });
+
+console.log('TURSO_DATABASE_URL:', process.env.TURSO_DATABASE_URL ? 'SET' : 'NOT SET');
+console.log('TURSO_AUTH_TOKEN:', process.env.TURSO_AUTH_TOKEN ? 'SET' : 'NOT SET');
 
 import { TursoJournalismStorage } from '../src/journalism/turso-storage';
 

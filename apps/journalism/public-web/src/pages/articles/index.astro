@@ -2,6 +2,9 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getStorage } from '@tamilfw/core';
 import type { Article } from '@tamilfw/core/journalism';
+import { formatDate, formatTimeAgo, readingTime, DOMAIN_INFO } from '../../lib/utils';
+
+const category = Astro.url.searchParams.get('category') || '';
 
 let articles: Article[] = [];
 try {
@@ -14,46 +17,51 @@ try {
     sortOrder: 'desc',
   });
   articles = result.articles;
+
+  if (category) {
+    articles = articles.filter((a) => a.category === category);
+  }
 } catch (err) {
   articles = [];
 }
 ---
-<BaseLayout
-  title="All Articles"
-  description="Browse all published investigative articles from Thamizhi."
->
-  <header class="mb-12">
-    <h1 class="text-4xl font-bold text-white mb-4">All Articles</h1>
-    <p class="text-gray-400">{articles.length} published articles</p>
-  </header>
 
-  {articles.length === 0 ? (
-    <div class="border border-gray-800 rounded-lg p-12 text-center">
-      <p class="text-gray-500">No articles yet.</p>
-    </div>
-  ) : (
-    <div class="space-y-6">
-      {articles.map((article) => (
-        <a
-          href={`/articles/${article.slug}`}
-          class="block border-b border-gray-800 pb-6 hover:border-[#00D4AA] transition group"
-        >
-          <div class="flex items-center gap-2 mb-2 text-xs">
-            {article.category && (
-              <span class="px-2 py-1 bg-blue-900/30 text-blue-300 rounded font-mono uppercase">
-                {article.category}
-              </span>
-            )}
-            <time class="text-gray-500 font-mono">
-              {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString() : 'draft'}
-            </time>
-          </div>
-          <h2 class="text-2xl font-bold text-white mb-2 group-hover:text-[#00D4AA] transition">
-            {article.title}
-          </h2>
-          <p class="text-gray-400 leading-relaxed">{article.excerpt}</p>
-        </a>
-      ))}
-    </div>
-  )}
+<BaseLayout
+  title={category ? `${DOMAIN_INFO[category]?.label || category} Articles` : 'All Articles'}
+  description={`Browse ${category ? DOMAIN_INFO[category]?.label || category : 'all'} articles from Thamizhi.`}
+  currentCategory={category}
+>
+  <div class="px-6 py-6">
+    <h1 class="text-xl font-bold text-foreground mb-0.5" style="font-family: Georgia, 'Times New Roman', serif;">
+      {category ? DOMAIN_INFO[category]?.label || category : 'Articles'}
+    </h1>
+    <p class="text-xs text-muted-foreground mb-4">
+      {articles.length} article{articles.length !== 1 ? 's' : ''}
+    </p>
+
+    {articles.length === 0 ? (
+      <p class="text-sm text-muted-foreground py-10 text-center">No articles found in this category.</p>
+    ) : (
+      <div class="space-y-0 divide-y">
+        {articles.map((article, i) => (
+          <a href={`/articles/${article.slug}`} class:list={['block py-3.5 group', `fade-in fade-in-delay-${Math.min(i + 1, 5)}`]}>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                {article.category && <span class="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wide">{article.category}</span>}
+              </div>
+              <h3 class="text-sm font-semibold text-foreground group-hover:text-primary transition-colors leading-snug line-clamp-1">{article.title}</h3>
+              <p class="text-xs text-muted-foreground line-clamp-1 mt-0.5">{article.excerpt}</p>
+              <div class="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 mt-1">
+                <span>{formatTimeAgo(article.publishedAt)}</span>
+                <span>·</span>
+                <span>{readingTime(article.body)}</span>
+                <span>·</span>
+                <span>{formatDate(article.publishedAt)}</span>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
 </BaseLayout>

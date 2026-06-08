@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "pipeline": {
+  "tasks": {
     "dev": {
       "cache": false,
       "persistent": true
@@ -13,6 +13,14 @@
       "outputs": []
     },
     "typecheck": {
+      "outputs": []
+    },
+    "db:push": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "db:seed": {
+      "dependsOn": ["^build"],
       "outputs": []
     }
   },

@@ -1,4 +1,8 @@
 ---
+import '../styles/global.css';
+import CategoryPanel from '../components/CategoryPanel.astro';
+import AiChatPanel from '../components/AiChatPanel.astro';
+
 export interface Props {
   title: string;
   description: string;
@@ -8,6 +12,7 @@ export interface Props {
   modifiedTime?: string;
   author?: string;
   canonical?: string;
+  currentCategory?: string;
 }
 
 const {
@@ -19,23 +24,34 @@ const {
   modifiedTime,
   author,
   canonical,
+  currentCategory = '',
 } = Astro.props;
 
 const url = canonical || Astro.url.href;
-const siteName = 'Thamizhi';
+const siteName = 'THAMIZHI';
+const currentPath = Astro.url.pathname;
+const isArticle = type === 'article';
 ---
+
 <!doctype html>
-<html lang="en" class="bg-black text-gray-100">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="generator" content={Astro.generator} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+    <!-- Inter font — modern, clean, shadcn default -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
     <title>{title} | {siteName}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={url} />
+    <meta name="color-scheme" content="light dark" />
 
+    <!-- Open Graph -->
     <meta property="og:type" content={type} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -43,6 +59,7 @@ const siteName = 'Thamizhi';
     <meta property="og:image" content={ogImage} />
     <meta property="og:site_name" content={siteName} />
 
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
@@ -53,7 +70,7 @@ const siteName = 'Thamizhi';
     {author && <meta property="article:author" content={author} />}
 
     {type === 'article' && (
-      <script type="application/ld+json" set:html={JSON.stringify({
+      <script is:inline type="application/ld+json" set:html={JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'NewsArticle',
         headline: title,
@@ -70,31 +87,206 @@ const siteName = 'Thamizhi';
         mainEntityOfPage: url,
       })} />
     )}
+
+    <script is:inline>
+      // ── Theme initialization ────────────────────────────────
+      (function() {
+        const saved = localStorage.getItem('thamizhi-theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (!saved && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
   </head>
-  <body class="bg-[#0A0E17] text-gray-100 min-h-screen font-sans antialiased">
-    <header class="border-b border-gray-800 bg-[#111827]">
-      <nav class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <a href="/" class="flex items-center gap-2 text-white font-bold text-xl tracking-wider">
-          <span class="text-[#00D4AA]">◆</span>
-          THAMIZHI
-        </a>
-        <div class="flex items-center gap-6 text-sm font-medium">
-          <a href="/articles" class="text-gray-300 hover:text-white transition">Articles</a>
-          <a href="/entities" class="text-gray-300 hover:text-white transition">Entities</a>
-          <a href="/about" class="text-gray-300 hover:text-white transition">About</a>
+  <body class="overflow-hidden">
+    <!-- Skip to content -->
+    <a href="#main-content" class="skip-to-content">Skip to content</a>
+
+    <!-- Reading progress bar (only on article pages) -->
+    {isArticle && <div id="reading-progress" class="reading-progress" aria-hidden="true"></div>}
+
+    <!-- ═══ HEADER ═══ -->
+    <header class="h-12 border-b bg-background/80 backdrop-blur-md sticky top-0 z-50" role="banner">
+      <nav class="h-full max-w-screen-2xl mx-auto px-3 flex items-center justify-between" aria-label="Main navigation">
+        <div class="flex items-center gap-1.5">
+          <!-- Mobile menu toggle -->
+          <button id="mobile-menu-toggle" class="sm:hidden w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle menu" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+          </button>
+
+          <!-- Desktop: Left panel toggle (Cmd+B) -->
+          <button id="panel-toggle" class="hidden sm:inline-flex w-8 h-8 rounded-md items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle sidebar (Cmd+B)" title="Toggle sidebar (⌘B)" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+          </button>
+
+          <!-- Logo: Five-spoked asterisk + Thamizhi -->
+          <a href="/" class="flex items-center gap-2 group ml-1" aria-label="THAMIZHI home">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" class="text-foreground shrink-0" aria-hidden="true">
+              <line x1="12" y1="2" x2="12" y2="22" />
+              <line x1="17.9" y1="3.9" x2="6.1" y2="20.1" />
+              <line x1="21.5" y1="8.9" x2="2.5" y2="15.1" />
+              <line x1="21.5" y1="15.1" x2="2.5" y2="8.9" />
+              <line x1="17.9" y1="20.1" x2="6.1" y2="3.9" />
+            </svg>
+            <span class="text-foreground font-bold tracking-tight text-sm">Thamizhi</span>
+          </a>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <!-- Desktop: AI Chat toggle (Cmd+J) -->
+          <button id="chat-panel-toggle" class="hidden sm:inline-flex w-8 h-8 rounded-md items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle AI chat (Cmd+J)" title="Toggle AI chat (⌘J)" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
+          </button>
+
+          <!-- Mobile AI Chat toggle -->
+          <button id="mobile-chat-toggle" class="sm:hidden w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle AI chat" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
+          </button>
+
+          <!-- Theme Toggle -->
+          <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle dark mode" title="Toggle dark mode" type="button">
+            <svg id="theme-toggle-sun" class="theme-toggle-icon w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+            </svg>
+            <svg id="theme-toggle-moon" class="theme-toggle-icon w-3.5 h-3.5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+            </svg>
+          </button>
         </div>
       </nav>
     </header>
 
-    <main class="max-w-6xl mx-auto px-6 py-8">
-      <slot />
-    </main>
-
-    <footer class="border-t border-gray-800 mt-16 py-8">
-      <div class="max-w-6xl mx-auto px-6 text-center text-gray-500 text-sm">
-        <p class="font-mono">DECENTRALIZED JOURNALISM • POWERED BY TURSO</p>
-        <p class="mt-2 text-xs">© 2026 Thamizhi. Open data, open source.</p>
+    <!-- ═══ 3-COLUMN LAYOUT with Zed-style collapsible panels ═══ -->
+    <div class="flex h-[calc(100vh-48px)]">
+      <!-- Left: Category Panel (collapsible with transition) -->
+      <div id="category-panel-wrapper" class="hidden sm:flex panel-transition" style="width: var(--panel-left-width, 240px);">
+        <CategoryPanel currentPath={currentPath} currentCategory={currentCategory} />
       </div>
-    </footer>
+
+      <!-- Center: Main Content -->
+      <main id="main-content" class="flex-1 min-w-0 overflow-y-auto" tabindex="-1">
+        <slot />
+      </main>
+
+      <!-- Right: AI Chat Panel (collapsible with transition) -->
+      <div id="ai-chat-panel-wrapper" class="hidden sm:flex panel-transition" style="width: var(--panel-right-width, 320px); overflow: hidden;">
+        <AiChatPanel />
+      </div>
+    </div>
+
+    <!-- Mobile overlays -->
+    <div id="mobile-category-overlay" class="fixed inset-0 z-40 hidden sm:hidden">
+      <div class="absolute inset-0 bg-black/40" id="mobile-category-backdrop"></div>
+      <div class="absolute left-0 top-0 bottom-0 w-[260px] bg-background shadow-xl"><CategoryPanel currentPath={currentPath} currentCategory={currentCategory} /></div>
+    </div>
+    <div id="mobile-chat-overlay" class="fixed inset-0 z-40 hidden sm:hidden">
+      <div class="absolute inset-0 bg-black/40" id="mobile-chat-backdrop"></div>
+      <div class="absolute right-0 top-0 bottom-0 w-[85vw] max-w-[360px] bg-background shadow-xl"><AiChatPanel /></div>
+    </div>
+
+    <button id="back-to-top" class="back-to-top" aria-label="Back to top" title="Back to top" type="button">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" /></svg>
+    </button>
+
+    <script is:inline>
+      // ── Theme Toggle ──────────────────────────────────────────
+      (function() {
+        const html = document.documentElement;
+        const toggle = document.getElementById('theme-toggle');
+        const sunIcon = document.getElementById('theme-toggle-sun');
+        const moonIcon = document.getElementById('theme-toggle-moon');
+        if (!toggle) return;
+        function setTheme(isDark) {
+          if (isDark) { html.classList.add('dark'); sunIcon?.classList.remove('hidden'); moonIcon?.classList.add('hidden'); }
+          else { html.classList.remove('dark'); sunIcon?.classList.add('hidden'); moonIcon?.classList.remove('hidden'); }
+        }
+        setTheme(html.classList.contains('dark'));
+        toggle.addEventListener('click', () => { const d = !html.classList.contains('dark'); setTheme(d); try { localStorage.setItem('thamizhi-theme', d ? 'dark' : 'light'); } catch {} });
+      })();
+
+      // ── Reading Progress ──────────────────────────────────────
+      (function() {
+        const bar = document.getElementById('reading-progress');
+        if (!bar) return;
+        function update() { const s = window.scrollY, d = document.documentElement.scrollHeight - window.innerHeight; bar.style.width = (d > 0 ? Math.min((s / d) * 100, 100) : 0) + '%'; }
+        window.addEventListener('scroll', update, { passive: true }); window.addEventListener('resize', update, { passive: true }); update();
+      })();
+
+      // ── Back to Top ───────────────────────────────────────────
+      (function() {
+        const main = document.getElementById('main-content'), btn = document.getElementById('back-to-top');
+        if (!btn || !main) return;
+        main.addEventListener('scroll', () => btn.classList.toggle('visible', main.scrollTop > 500), { passive: true });
+        btn.addEventListener('click', () => main.scrollTo({ top: 0, behavior: 'smooth' }));
+      })();
+
+      // ── Zed-style Panel Toggles with Keyboard Shortcuts ──────
+      (function() {
+        const leftWrapper = document.getElementById('category-panel-wrapper');
+        const rightWrapper = document.getElementById('ai-chat-panel-wrapper');
+        const panelToggle = document.getElementById('panel-toggle');
+        const chatToggle = document.getElementById('chat-panel-toggle');
+        if (!leftWrapper || !rightWrapper || !panelToggle || !chatToggle) return;
+
+        const LS_LEFT = 'thamizhi-panel-left';
+        const LS_RIGHT = 'thamizhi-panel-right';
+        const LEFT_W = 240;
+        const RIGHT_W = 320;
+
+        // Restore state
+        let leftOpen = localStorage.getItem(LS_LEFT) !== 'closed';
+        let rightOpen = localStorage.getItem(LS_RIGHT) !== 'closed';
+
+        function applyLeft() {
+          leftWrapper.style.setProperty('--panel-left-width', leftOpen ? LEFT_W + 'px' : '0px');
+          panelToggle.setAttribute('aria-label', leftOpen ? 'Close sidebar (⌘B)' : 'Open sidebar (⌘B)');
+          panelToggle.setAttribute('title', leftOpen ? 'Close sidebar (⌘B)' : 'Open sidebar (⌘B)');
+        }
+        function applyRight() {
+          rightWrapper.style.setProperty('--panel-right-width', rightOpen ? RIGHT_W + 'px' : '0px');
+          chatToggle.setAttribute('aria-label', rightOpen ? 'Close AI chat (⌘J)' : 'Open AI chat (⌘J)');
+          chatToggle.setAttribute('title', rightOpen ? 'Close AI chat (⌘J)' : 'Open AI chat (⌘J)');
+        }
+
+        applyLeft();
+        applyRight();
+
+        panelToggle.addEventListener('click', () => { leftOpen = !leftOpen; applyLeft(); try { localStorage.setItem(LS_LEFT, leftOpen ? 'open' : 'closed'); } catch {} });
+        chatToggle.addEventListener('click', () => { rightOpen = !rightOpen; applyRight(); try { localStorage.setItem(LS_RIGHT, rightOpen ? 'open' : 'closed'); } catch {} });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+          // Cmd+B or Ctrl+B to toggle left panel
+          if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+            e.preventDefault();
+            leftOpen = !leftOpen; applyLeft(); try { localStorage.setItem(LS_LEFT, leftOpen ? 'open' : 'closed'); } catch {}
+          }
+          // Cmd+J or Ctrl+J to toggle right panel
+          if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
+            e.preventDefault();
+            rightOpen = !rightOpen; applyRight(); try { localStorage.setItem(LS_RIGHT, rightOpen ? 'open' : 'closed'); } catch {}
+          }
+        });
+      })();
+
+      // ── Mobile Menu Toggle ────────────────────────────────────
+      (function() {
+        const btn = document.getElementById('mobile-menu-toggle'), overlay = document.getElementById('mobile-category-overlay'), backdrop = document.getElementById('mobile-category-backdrop');
+        if (!btn || !overlay || !backdrop) return;
+        btn.addEventListener('click', () => { overlay.classList.remove('hidden'); document.body.style.overflow = 'hidden'; });
+        backdrop.addEventListener('click', () => { overlay.classList.add('hidden'); document.body.style.overflow = ''; });
+      })();
+
+      // ── Mobile Chat Toggle ────────────────────────────────────
+      (function() {
+        const btn = document.getElementById('mobile-chat-toggle'), overlay = document.getElementById('mobile-chat-overlay'), backdrop = document.getElementById('mobile-chat-backdrop');
+        if (!btn || !overlay || !backdrop) return;
+        btn.addEventListener('click', () => { overlay.classList.remove('hidden'); document.body.style.overflow = 'hidden'; });
+        backdrop.addEventListener('click', () => { overlay.classList.add('hidden'); document.body.style.overflow = ''; });
+      })();
+    </script>
   </body>
 </html>
