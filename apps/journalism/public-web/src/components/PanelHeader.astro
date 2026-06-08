@@ -1,0 +1,20 @@
+---
+interface Props {
+  title: string;
+  action?: string;
+  actionHref?: string;
+}
+
+const { title, action, actionHref } = Astro.props;
+---
+
+<div class="flex items-center justify-between mb-6">
+  <h2 class="text-lg font-semibold text-[var(--text-primary)]" style="font-family: var(--font-serif);">
+    {title}
+  </h2>
+  {action && actionHref && (
+    <a href={actionHref} class="text-sm text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors font-medium">
+      {action} →
+    </a>
+  )}
+</div>

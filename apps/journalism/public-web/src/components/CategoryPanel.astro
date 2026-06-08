@@ -1,0 +1,80 @@
+---
+import { DOMAIN_INFO, CATEGORY_COLORS } from '../lib/utils';
+
+// Map CATEGORY_COLORS values to Tailwind bg-*-500 classes
+const COLOR_MAP: Record<string, string> = {
+  amber: 'bg-amber-500',
+  red: 'bg-red-500',
+  teal: 'bg-teal-500',
+  green: 'bg-green-500',
+  blue: 'bg-blue-500',
+  purple: 'bg-purple-500',
+  rose: 'bg-rose-500',
+  emerald: 'bg-emerald-500',
+  orange: 'bg-orange-500',
+  lime: 'bg-lime-500',
+  cyan: 'bg-cyan-500',
+  violet: 'bg-violet-500',
+  pink: 'bg-pink-500',
+};
+
+export interface Props {
+  currentPath: string;
+  currentCategory?: string;
+}
+
+const { currentPath, currentCategory = '' } = Astro.props;
+
+const topics = Object.entries(DOMAIN_INFO);
+const allActive = !currentCategory;
+---
+
+<aside
+  id="category-panel"
+  class="w-[240px] shrink-0 border-r bg-background flex flex-col h-full overflow-y-auto"
+  aria-label="Category navigation"
+>
+  <nav class="flex-1 py-2 px-2 space-y-0.5" aria-label="Categories">
+    <a
+      href="/articles"
+      class:list={[
+        'group flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-all duration-150',
+        allActive
+          ? 'bg-secondary text-foreground font-medium'
+          : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50',
+      ]}
+    >
+      <span class="truncate">All Articles</span>
+    </a>
+
+    <!-- Divider -->
+    <div class="my-2 h-px bg-border" aria-hidden="true"></div>
+
+    <!-- Domain categories -->
+    {topics.map(([key, info]) => {
+      const isActive = currentCategory === key;
+      const colorKey = CATEGORY_COLORS[key] || 'muted';
+      const catColor = COLOR_MAP[colorKey] || 'bg-muted-foreground';
+      return (
+        <a
+          href={`/articles?category=${key}`}
+          class:list={[
+            'group flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-all duration-150',
+            isActive
+              ? 'bg-secondary text-foreground font-medium'
+              : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50',
+          ]}
+        >
+          <span class={`w-2 h-2 rounded-full ${catColor} shrink-0 ${isActive ? 'ring-2 ring-offset-1 ring-offset-background ring-current' : ''}`} aria-hidden="true" />
+          <span class="truncate">{info.label}</span>
+        </a>
+      );
+    })}
+  </nav>
+
+    <footer class="px-3 py-2 border-t text-center text-[9px] text-muted-foreground/60">
+    <span>&copy; {new Date().getFullYear()} Thamizhi &middot; Open journalism</span>
+    <br />
+    <span class="font-mono">⌘B sidebar &middot; ⌘J chat</span>
+  </footer>
+</aside>

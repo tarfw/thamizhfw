@@ -1,0 +1,429 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 12%;
+    --primary: 200 38% 32%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 97%;
+    --secondary-foreground: 0 0% 20%;
+    --muted: 0 0% 97%;
+    --muted-foreground: 0 0% 48%;
+    --accent: 200 38% 32%;
+    --accent-foreground: 0 0% 98%;
+    --accent-hover: 200 40% 26%;
+    --accent-light: 0 0% 97%;
+    --destructive: 0 68% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 200 38% 32%;
+    --radius: 0.375rem;
+
+    /* Prose-specific tokens — Medium warm grays */
+    --prose-body: 0 0% 18%;
+    --prose-bold: 0 0% 10%;
+    --prose-headings: 0 0% 8%;
+    --prose-quotes: 200 38% 32%;
+    --prose-quote-bg: 0 0% 97%;
+    --prose-links: 200 38% 32%;
+    --prose-code: 0 0% 18%;
+    --prose-code-bg: 0 0% 93%;
+    --prose-hr: 0 0% 88%;
+    --prose-figcaption: 0 0% 48%;
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 82%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 82%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 82%;
+    --primary: 200 48% 52%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 0 0% 82%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 52%;
+    --accent: 200 48% 52%;
+    --accent-foreground: 0 0% 8%;
+    --accent-hover: 200 48% 46%;
+    --accent-light: 0 0% 14%;
+    --destructive: 0 58% 38%;
+    --destructive-foreground: 0 0% 88%;
+    --border: 0 0% 19%;
+    --input: 0 0% 19%;
+    --ring: 200 48% 52%;
+
+    /* Prose-specific tokens — dark */
+    --prose-body: 0 0% 76%;
+    --prose-bold: 0 0% 88%;
+    --prose-headings: 0 0% 90%;
+    --prose-quotes: 200 48% 64%;
+    --prose-quote-bg: 0 0% 13%;
+    --prose-links: 200 48% 64%;
+    --prose-code: 0 0% 88%;
+    --prose-code-bg: 0 0% 16%;
+    --prose-hr: 0 0% 19%;
+    --prose-figcaption: 0 0% 52%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.15);
+    color: hsl(var(--foreground));
+  }
+
+  /* Subtle scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  /* Modern headings — Inter bold */
+  h1, h2, h3, .font-serif-heading {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: hsl(var(--foreground));
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  /* ── Prose Styles — Modern reading typography ───────────── */
+  .prose-journal {
+    color: hsl(var(--prose-body));
+    font-size: 1.25rem;
+    line-height: 1.6;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    max-width: 100%;
+    letter-spacing: 0.005em;
+  }
+
+  .prose-journal p {
+    margin-bottom: 1.6rem;
+  }
+
+  /* Drop cap: subtle, only first paragraph */
+  .prose-journal > p:first-of-type::first-letter {
+    font-size: 2.6em;
+    font-weight: 400;
+    float: left;
+    line-height: 0.85;
+    margin-right: 0.5rem;
+    margin-top: 0.12rem;
+    padding: 0.05rem 0.1rem 0 0;
+    color: hsl(var(--prose-headings));
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  .prose-journal > p:first-of-type {
+    font-size: 1.25rem;
+    color: hsl(var(--prose-bold));
+    line-height: 1.6;
+  }
+
+  .prose-journal a {
+    color: hsl(var(--prose-links));
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    transition: text-decoration-thickness 0.15s ease;
+  }
+
+  .prose-journal a:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  .prose-journal strong {
+    color: hsl(var(--prose-bold));
+    font-weight: 700;
+  }
+
+  .prose-journal em {
+    font-style: italic;
+  }
+
+  /* Medium-style blockquote: big open quote mark */
+  .prose-journal blockquote {
+    border-left: none;
+    background: transparent;
+    padding: 0 0 0 2.5rem;
+    margin: 2rem 0;
+    font-style: italic;
+    color: hsl(var(--prose-body));
+    font-size: 1.15rem;
+    line-height: 1.6;
+    position: relative;
+  }
+
+  .prose-journal blockquote::before {
+    content: '\201C';
+    position: absolute;
+    top: -0.2rem;
+    left: 0;
+    font-size: 3.5rem;
+    color: hsl(var(--prose-quotes) / 0.2);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1;
+    pointer-events: none;
+  }
+
+  .prose-journal blockquote p:first-of-type {
+    font-size: 1.15rem;
+  }
+
+  .prose-journal blockquote p:first-of-type::first-letter {
+    all: unset;
+  }
+
+  .prose-journal hr {
+    border: none;
+    height: 1px;
+    background: hsl(var(--prose-hr));
+    margin: 2.5rem 0;
+  }
+
+  .prose-journal ul,
+  .prose-journal ol {
+    padding-left: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .prose-journal li {
+    margin-bottom: 0.5rem;
+  }
+
+  .prose-journal ul li::marker {
+    color: hsl(var(--prose-quotes));
+  }
+
+  .prose-journal ol li::marker {
+    color: hsl(var(--prose-quotes));
+    font-weight: 500;
+  }
+
+  .prose-journal code {
+    font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82em;
+    background: hsl(var(--prose-code-bg));
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    color: hsl(var(--prose-code));
+  }
+
+  .prose-journal h2 {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: hsl(var(--prose-headings));
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    line-height: 1.3;
+  }
+
+  .prose-journal h3 {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: hsl(var(--prose-headings));
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    line-height: 1.35;
+  }
+
+  .prose-journal img {
+    border-radius: 4px;
+    margin: 2rem 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .prose-journal figure {
+    margin: 2rem 0;
+  }
+
+  .prose-journal figcaption {
+    text-align: center;
+    font-size: 0.85rem;
+    color: hsl(var(--prose-figcaption));
+    margin-top: 0.5rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-style: italic;
+  }
+
+  /* ── Reading Progress Bar ─────────────────────────────────── */
+  .reading-progress {
+    position: fixed;
+    top: 48px;
+    left: 0;
+    width: 0%;
+    height: 2px;
+    background: hsl(var(--primary) / 0.6);
+    z-index: 9999;
+    transition: width 0.1s linear;
+  }
+
+  /* ── Skip to content ──────────────────────────────────────── */
+  .skip-to-content {
+    position: absolute;
+    top: -100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.5rem 1rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    font-size: 0.875rem;
+    border-radius: 0 0 6px 6px;
+    z-index: 10000;
+    transition: top 0.2s ease;
+  }
+  .skip-to-content:focus {
+    top: 0;
+  }
+
+  /* ── Theme Toggle ─────────────────────────────────────────── */
+  .theme-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .theme-toggle-btn:hover {
+    background: hsl(var(--secondary));
+    color: hsl(var(--foreground));
+  }
+
+  .theme-toggle-btn:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .theme-toggle-icon {
+    transition: transform 0.2s ease;
+  }
+
+  .theme-toggle-icon.dark {
+    transform: rotate(180deg);
+  }
+
+  /* ── Panel Transitions (Zed-style) ──────────────────────── */
+  .panel-transition {
+    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+
+  /* ── Back to Top ──────────────────────────────────────────── */
+  .back-to-top {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 50;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--background) / 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    transition: all 0.2s ease;
+    opacity: 0;
+    transform: translateY(12px);
+    pointer-events: none;
+    box-shadow: 0 1px 4px hsl(var(--foreground) / 0.06);
+  }
+
+  .back-to-top.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .back-to-top:hover {
+    border-color: hsl(var(--ring));
+    color: hsl(var(--foreground));
+    box-shadow: 0 2px 8px hsl(var(--foreground) / 0.08);
+  }
+}
+
+@layer utilities {
+  .fade-in {
+    animation: fade-in 0.4s ease-out forwards;
+  }
+
+  .fade-in-delay-1 { animation-delay: 0.06s; opacity: 0; }
+  .fade-in-delay-2 { animation-delay: 0.12s; opacity: 0; }
+  .fade-in-delay-3 { animation-delay: 0.18s; opacity: 0; }
+  .fade-in-delay-4 { animation-delay: 0.24s; opacity: 0; }
+  .fade-in-delay-5 { animation-delay: 0.3s; opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in,
+    .fade-in-delay-1,
+    .fade-in-delay-2,
+    .fade-in-delay-3,
+    .fade-in-delay-4,
+    .fade-in-delay-5 {
+      animation: none !important;
+      opacity: 1 !important;
+    }
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+
+
+
