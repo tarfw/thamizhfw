@@ -2,7 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { getStorage } from '@tamilfw/core';
 import type { Article } from '@tamilfw/core/journalism';
-import { formatTimeAgo, readingTime, badgeVariant } from '../lib/utils';
+import { formatTimeAgo, readingTime, getWordCount, badgeVariant } from '../lib/utils';
 import { Badge } from '../components/ui/badge';
 
 let articles: Article[] = [];
@@ -33,16 +33,16 @@ try {
     <div class="px-6 py-10 md:py-14">
       <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-secondary text-muted-foreground text-[11px] font-medium mb-4 fade-in">
         <span class="w-1.5 h-1.5 rounded-full bg-current opacity-40" aria-hidden="true"></span>
-        Independent &amp; Open Journalism
+        <span data-i18n="ui.independentJournalism">Independent &amp; Open Journalism</span>
       </div>
-      <h1 class="text-2xl md:text-[2.2rem] font-bold text-foreground leading-[1.1] mb-3 fade-in" style="font-family: 'Inter', sans-serif; letter-spacing: -0.02em;">
+      <h1 class="text-2xl md:text-[2.2rem] font-bold text-foreground leading-[1.1] mb-3 fade-in" style="font-family: 'Inter', sans-serif; letter-spacing: -0.02em;" data-i18n="ui.openJournals">
         Open Journals from Tamil Nadu
       </h1>
-      <p class="text-sm text-muted-foreground leading-relaxed mb-6 max-w-md fade-in fade-in-delay-1">
+      <p class="text-sm text-muted-foreground leading-relaxed mb-6 max-w-md fade-in fade-in-delay-1" data-i18n="ui.tagline">
         Transparent, independent journalism covering every domain that matters.
       </p>
       <div class="flex items-center gap-2.5 fade-in fade-in-delay-2">
-        <a href="/articles" class="inline-flex h-8 px-4 rounded-md bg-foreground text-background text-xs font-medium hover:bg-foreground/90 transition-colors items-center">Browse Articles</a>
+        <a href="/articles" class="inline-flex h-8 px-4 rounded-md bg-foreground text-background text-xs font-medium hover:bg-foreground/90 transition-colors items-center" data-i18n="ui.browseArticles">Browse Articles</a>
       </div>
     </div>
   </section>
@@ -51,7 +51,7 @@ try {
   {latestArticle && (
     <section class="border-b">
       <div class="px-6 py-8">
-        <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3 block">Featured</span>
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-3 block" data-i18n="ui.featured">Featured</span>
         <a href={`/articles/${latestArticle.slug}`} class="block group">
           <div class="flex flex-col sm:flex-row-reverse sm:items-start gap-4 sm:gap-6">
             <div class="w-full sm:w-[200px] shrink-0 aspect-[3/2] sm:aspect-square rounded-md bg-muted flex items-center justify-center">
@@ -66,9 +66,9 @@ try {
               <div class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span>{latestArticle.authorId || 'Editorial'}</span>
                 <span class="text-muted-foreground/30">·</span>
-                <span>{formatTimeAgo(latestArticle.publishedAt)}</span>
+                <span data-ts={latestArticle.publishedAt}>{formatTimeAgo(latestArticle.publishedAt)}</span>
                 <span class="text-muted-foreground/30">·</span>
-                <span>{readingTime(latestArticle.body)}</span>
+                <span data-reading-time={getWordCount(latestArticle.body)}>{readingTime(latestArticle.body)}</span>
               </div>
             </div>
           </div>
@@ -80,11 +80,11 @@ try {
   <!-- Latest Articles -->
   <section class="px-6 py-8">
     <div class="flex items-center justify-between mb-4">
-      <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Latest</span>
-      <a href="/articles" class="text-xs text-muted-foreground hover:text-foreground transition-colors">View all →</a>
+      <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70" data-i18n="ui.latest">Latest</span>
+      <a href="/articles" class="text-xs text-muted-foreground hover:text-foreground transition-colors" data-i18n="ui.viewAll">View all →</a>
     </div>
     {articles.length === 0 ? (
-      <p class="text-sm text-muted-foreground py-8 text-center">No articles yet.</p>
+      <p class="text-sm text-muted-foreground py-8 text-center" data-i18n="ui.noArticles">No articles yet.</p>
     ) : (
       <div class="space-y-0 divide-y">
         {articles.slice(0, 5).map((article, i) => (
@@ -97,9 +97,9 @@ try {
                 <h3 class="text-sm font-semibold text-foreground group-hover:text-primary transition-colors leading-snug line-clamp-1">{article.title}</h3>
                 <p class="text-xs text-muted-foreground line-clamp-1 mt-0.5">{article.excerpt}</p>
                 <div class="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 mt-1">
-                  <span>{formatTimeAgo(article.publishedAt)}</span>
+                  <span data-ts={article.publishedAt}>{formatTimeAgo(article.publishedAt)}</span>
                   <span>·</span>
-                  <span>{readingTime(article.body)}</span>
+                  <span data-reading-time={getWordCount(article.body)}>{readingTime(article.body)}</span>
                 </div>
               </div>
             </div>

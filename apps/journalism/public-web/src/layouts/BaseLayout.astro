@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import CategoryPanel from '../components/CategoryPanel.astro';
 import AiChatPanel from '../components/AiChatPanel.astro';
+import { TRANSLATIONS, CATEGORY_LABELS, CATEGORY_DESCRIPTIONS } from '../lib/i18n';
 
 export interface Props {
   title: string;
@@ -29,7 +30,6 @@ const {
 
 const url = canonical || Astro.url.href;
 const siteName = 'THAMIZHI';
-const currentPath = Astro.url.pathname;
 const isArticle = type === 'article';
 ---
 
@@ -89,6 +89,7 @@ const isArticle = type === 'article';
     )}
 
     <script is:inline>
+      window.__i18n = JSON.parse('{JSON.stringify({ translations: TRANSLATIONS, categoryLabels: CATEGORY_LABELS, categoryDescriptions: CATEGORY_DESCRIPTIONS })}');
       // ── Theme initialization ────────────────────────────────
       (function() {
         const saved = localStorage.getItem('thamizhi-theme');
@@ -99,6 +100,127 @@ const isArticle = type === 'article';
           document.documentElement.classList.remove('dark');
         }
       })();
+
+      // ── I18n: apply translations on page load & lang toggle ──
+      window.__applyTranslations = function(lang) {
+        var l = lang || localStorage.getItem('thamizhi-lang') || 'en';
+        var data = window.__i18n || {};
+        var dict = (data.translations && data.translations[l]) || {};
+        var fallback = (data.translations && data.translations.en) || {};
+        var catLabels = (data.categoryLabels && data.categoryLabels[l]) || {};
+        var catLabelsEn = (data.categoryLabels && data.categoryLabels.en) || {};
+        var catDescs = (data.categoryDescriptions && data.categoryDescriptions[l]) || {};
+        var catDescsEn = (data.categoryDescriptions && data.categoryDescriptions.en) || {};
+
+        // data-i18n: text content
+        document.querySelectorAll('[data-i18n]').forEach(function(el) {
+          var key = el.getAttribute('data-i18n');
+          if (!key) return;
+          var translated;
+          if (key.indexOf('cat.label.') === 0) {
+            var catKey = key.replace('cat.label.', '');
+            translated = catLabels[catKey] || catLabelsEn[catKey];
+          } else if (key.indexOf('cat.desc.') === 0) {
+            var catKey2 = key.replace('cat.desc.', '');
+            translated = catDescs[catKey2] || catDescsEn[catKey2];
+          } else {
+            translated = dict[key] || fallback[key];
+          }
+          if (translated) el.textContent = translated;
+        });
+
+        // data-i18n-placeholder
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
+          var key = el.getAttribute('data-i18n-placeholder');
+          if (key) {
+            var translated = dict[key] || fallback[key];
+            if (translated) el.placeholder = translated;
+          }
+        });
+
+        // data-i18n-aria (sets both aria-label and title)
+        document.querySelectorAll('[data-i18n-aria]').forEach(function(el) {
+          var key = el.getAttribute('data-i18n-aria');
+          if (key) {
+            var translated = dict[key] || fallback[key];
+            if (translated) {
+              el.setAttribute('aria-label', translated);
+              el.setAttribute('title', translated);
+            }
+          }
+        });
+
+        // data-i18n-title (sets title only)
+        document.querySelectorAll('[data-i18n-title]').forEach(function(el) {
+          var key = el.getAttribute('data-i18n-title');
+          if (key) {
+            var translated;
+            if (key.indexOf('cat.desc.') === 0) {
+              var catKey = key.replace('cat.desc.', '');
+              translated = catDescs[catKey] || catDescsEn[catKey];
+            } else {
+              translated = dict[key] || fallback[key];
+            }
+            if (translated) el.setAttribute('title', translated);
+          }
+        });
+
+        // data-ts: re-compute relative time strings
+        document.querySelectorAll('[data-ts]').forEach(function(el) {
+          var ts = parseInt(el.getAttribute('data-ts'), 10);
+          if (!ts) return;
+          var diff = Date.now() - ts;
+          var seconds = Math.floor(diff / 1000);
+          var translated;
+          if (seconds < 60) {
+            translated = (dict['ui.justNow'] || 'just now');
+          } else {
+            var minutes = Math.floor(seconds / 60);
+            if (minutes < 60) {
+              translated = (dict['ui.minutesAgo'] || '{{n}}m ago').replace('{{n}}', minutes);
+            } else {
+              var hours = Math.floor(minutes / 60);
+              if (hours < 24) {
+                translated = (dict['ui.hoursAgo'] || '{{n}}h ago').replace('{{n}}', hours);
+              } else {
+                var days = Math.floor(hours / 24);
+                if (days < 7) {
+                  translated = (dict['ui.daysAgo'] || '{{n}}d ago').replace('{{n}}', days);
+                } else {
+                  var weeks = Math.floor(days / 7);
+                  if (weeks < 4) {
+                    translated = (dict['ui.weeksAgo'] || '{{n}}w ago').replace('{{n}}', weeks);
+                  } else {
+                    return; // fall back to date, keep as-is
+                  }
+                }
+              }
+            }
+          }
+          if (translated) el.textContent = translated;
+        });
+
+        // data-reading-time: re-compute reading time
+        document.querySelectorAll('[data-reading-time]').forEach(function(el) {
+          var words = parseInt(el.getAttribute('data-reading-time'), 10);
+          if (!words) return;
+          var minutes = Math.ceil(words / 200);
+          var translated = (dict['ui.readingTime'] || '{{n}} min read').replace('{{n}}', minutes);
+          if (translated) el.textContent = translated;
+        });
+
+        // data-article-count: translate article count with plural forms
+        document.querySelectorAll('[data-article-count]').forEach(function(el) {
+          var count = parseInt(el.getAttribute('data-article-count'), 10);
+          if (isNaN(count)) return;
+          var key = count === 1 ? 'ui.articlesCount' : 'ui.articlesCount_plural';
+          var translated = (dict[key] || fallback[key] || '{{n}} article').replace('{{n}}', count);
+          if (translated) el.textContent = translated;
+        });
+      };
+
+      // Apply translations on initial load
+      window.__applyTranslations();
     </script>
   </head>
   <body class="overflow-hidden">
@@ -108,62 +230,11 @@ const isArticle = type === 'article';
     <!-- Reading progress bar (only on article pages) -->
     {isArticle && <div id="reading-progress" class="reading-progress" aria-hidden="true"></div>}
 
-    <!-- ═══ HEADER ═══ -->
-    <header class="h-12 border-b bg-background/80 backdrop-blur-md sticky top-0 z-50" role="banner">
-      <nav class="h-full max-w-screen-2xl mx-auto px-3 flex items-center justify-between" aria-label="Main navigation">
-        <div class="flex items-center gap-1.5">
-          <!-- Mobile menu toggle -->
-          <button id="mobile-menu-toggle" class="sm:hidden w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle menu" type="button">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-          </button>
-
-          <!-- Desktop: Left panel toggle (Cmd+B) -->
-          <button id="panel-toggle" class="hidden sm:inline-flex w-8 h-8 rounded-md items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle sidebar (Cmd+B)" title="Toggle sidebar (⌘B)" type="button">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-          </button>
-
-          <!-- Logo: Five-spoked asterisk + Thamizhi -->
-          <a href="/" class="flex items-center gap-2 group ml-1" aria-label="THAMIZHI home">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" class="text-foreground shrink-0" aria-hidden="true">
-              <line x1="12" y1="2" x2="12" y2="22" />
-              <line x1="17.9" y1="3.9" x2="6.1" y2="20.1" />
-              <line x1="21.5" y1="8.9" x2="2.5" y2="15.1" />
-              <line x1="21.5" y1="15.1" x2="2.5" y2="8.9" />
-              <line x1="17.9" y1="20.1" x2="6.1" y2="3.9" />
-            </svg>
-            <span class="text-foreground font-bold tracking-tight text-sm">Thamizhi</span>
-          </a>
-        </div>
-
-        <div class="flex items-center gap-1">
-          <!-- Desktop: AI Chat toggle (Cmd+J) -->
-          <button id="chat-panel-toggle" class="hidden sm:inline-flex w-8 h-8 rounded-md items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle AI chat (Cmd+J)" title="Toggle AI chat (⌘J)" type="button">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
-          </button>
-
-          <!-- Mobile AI Chat toggle -->
-          <button id="mobile-chat-toggle" class="sm:hidden w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" aria-label="Toggle AI chat" type="button">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
-          </button>
-
-          <!-- Theme Toggle -->
-          <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle dark mode" title="Toggle dark mode" type="button">
-            <svg id="theme-toggle-sun" class="theme-toggle-icon w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-            </svg>
-            <svg id="theme-toggle-moon" class="theme-toggle-icon w-3.5 h-3.5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-            </svg>
-          </button>
-        </div>
-      </nav>
-    </header>
-
     <!-- ═══ 3-COLUMN LAYOUT with Zed-style collapsible panels ═══ -->
-    <div class="flex h-[calc(100vh-48px)]">
+    <div class="flex h-[calc(100vh-40px)]">
       <!-- Left: Category Panel (collapsible with transition) -->
       <div id="category-panel-wrapper" class="hidden sm:flex panel-transition" style="width: var(--panel-left-width, 240px);">
-        <CategoryPanel currentPath={currentPath} currentCategory={currentCategory} />
+        <CategoryPanel currentCategory={currentCategory} />
       </div>
 
       <!-- Center: Main Content -->
@@ -177,21 +248,118 @@ const isArticle = type === 'article';
       </div>
     </div>
 
-    <!-- Mobile overlays -->
-    <div id="mobile-category-overlay" class="fixed inset-0 z-40 hidden sm:hidden">
-      <div class="absolute inset-0 bg-black/40" id="mobile-category-backdrop"></div>
-      <div class="absolute left-0 top-0 bottom-0 w-[260px] bg-background shadow-xl"><CategoryPanel currentPath={currentPath} currentCategory={currentCategory} /></div>
+    <!-- Mobile overlays (slide transitions) -->
+    <div id="mobile-category-overlay" class="mobile-overlay fixed inset-0 z-[60] sm:hidden">
+      <div class="mobile-backdrop absolute inset-0 bg-black/40" id="mobile-category-backdrop"></div>
+      <div class="mobile-panel-left absolute left-0 top-0 bottom-0 w-[260px] bg-background shadow-xl"><CategoryPanel currentCategory={currentCategory} /></div>
     </div>
-    <div id="mobile-chat-overlay" class="fixed inset-0 z-40 hidden sm:hidden">
-      <div class="absolute inset-0 bg-black/40" id="mobile-chat-backdrop"></div>
-      <div class="absolute right-0 top-0 bottom-0 w-[85vw] max-w-[360px] bg-background shadow-xl"><AiChatPanel /></div>
+    <div id="mobile-chat-overlay" class="mobile-overlay fixed inset-0 z-[60] sm:hidden">
+      <div class="mobile-backdrop absolute inset-0 bg-black/40" id="mobile-chat-backdrop"></div>
+      <div class="mobile-panel-right absolute right-0 top-0 bottom-0 w-[85vw] max-w-[360px] bg-background shadow-xl"><AiChatPanel /></div>
     </div>
 
-    <button id="back-to-top" class="back-to-top" aria-label="Back to top" title="Back to top" type="button">
+    <button id="back-to-top" class="back-to-top" aria-label="Back to top" title="Back to top" data-i18n-aria="ui.backToTop" type="button">
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" /></svg>
     </button>
 
+    <!-- ═══ BOTTOM BAR (Zed-style footer) ═══ -->
+    <footer class="h-10 fixed bottom-0 left-0 right-0 z-50 bottom-bar-mica" role="contentinfo">
+      <nav class="relative h-full w-full px-4 flex items-center justify-between" aria-label="Footer navigation">
+        <!-- Left: nav controls -->
+        <div class="flex items-center gap-1.5">
+          <!-- Mobile menu toggle (shadcn-style) -->
+          <button id="mobile-menu-toggle" class="sm:hidden w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" data-i18n-aria="ui.toggleMenu" aria-label="Toggle menu" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></svg>
+          </button>
+
+          <!-- Desktop: Left panel toggle (Cmd+B) → shadcn panel-left icon -->
+          <button id="panel-toggle" class="hidden sm:inline-flex w-8 h-8 rounded-md items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" data-i18n-aria="ui.toggleSidebar" aria-label="Toggle sidebar (Cmd+B)" title="Toggle sidebar (⌘B)" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="9" y1="3" x2="9" y2="21" /></svg>
+          </button>
+
+          <!-- Logo: Five-spoked asterisk + Thamizhi -->
+          <a href="/" class="flex items-center gap-2 group ml-1" aria-label="THAMIZHI home">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" class="text-foreground shrink-0 transition-transform duration-200 group-hover:scale-110 group-hover:rotate-[12deg]" aria-hidden="true">
+              <line x1="12" y1="2" x2="12" y2="22" />
+              <line x1="17.9" y1="3.9" x2="6.1" y2="20.1" />
+              <line x1="21.5" y1="8.9" x2="2.5" y2="15.1" />
+              <line x1="21.5" y1="15.1" x2="2.5" y2="8.9" />
+              <line x1="17.9" y1="20.1" x2="6.1" y2="3.9" />
+            </svg>
+            <span class="text-foreground font-bold tracking-tight text-sm group-hover:text-muted-foreground transition-colors duration-200">Thamizhi</span>
+          </a>
+        </div>
+
+        <!-- Center: copyright + language toggle → absolutely centered -->
+        <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] text-muted-foreground/60">
+          <span data-i18n="ui.copyright">&copy; {new Date().getFullYear()} Thamizhi &middot; Open journalism</span>
+          <span class="w-px h-3 bg-border/60" aria-hidden="true"></span>
+          <button id="lang-toggle" class="flex items-center gap-1.5 font-medium tracking-wide hover:text-foreground transition-colors" data-i18n-aria="ui.switchLang" aria-label="Switch language" title="Switch language" type="button">
+            <span id="lang-en" class="uppercase text-foreground">EN</span>
+            <span class="text-muted-foreground/30 text-[9px]">/</span>
+            <span id="lang-ta" class="text-muted-foreground/50">த</span>
+          </button>
+        </div>
+
+        <!-- Right: controls (pushed to far right) -->
+        <div class="flex items-center gap-1">
+          <!-- Mobile chat toggle (shadcn message-square) -->
+          <button id="mobile-chat-toggle" class="sm:hidden w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" data-i18n-aria="ui.toggleChat" aria-label="Toggle AI chat" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+          </button>
+
+          <!-- Desktop: AI Chat toggle (Cmd+J) → shadcn message-square -->
+          <button id="chat-panel-toggle" class="hidden sm:inline-flex w-8 h-8 rounded-md items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" data-i18n-aria="ui.toggleChat" aria-label="Toggle AI chat (Cmd+J)" title="Toggle AI chat (⌘J)" type="button">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+          </button>
+
+          <!-- Theme Toggle (shadcn-style, animated) -->
+          <button id="theme-toggle" class="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors theme-toggle-btn" data-i18n-aria="ui.toggleTheme" aria-label="Toggle dark mode" title="Toggle dark mode" type="button">
+            <svg id="theme-toggle-sun" class="w-4 h-4 theme-toggle-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+            </svg>
+            <svg id="theme-toggle-moon" class="w-4 h-4 hidden theme-toggle-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          </button>
+        </div>
+      </nav>
+    </footer>
+
     <script is:inline>
+      // ── Language Toggle ───────────────────────────────────────
+      (function() {
+        const btn = document.getElementById('lang-toggle');
+        const en = document.getElementById('lang-en');
+        const ta = document.getElementById('lang-ta');
+        const html = document.documentElement;
+        if (!btn || !en || !ta) return;
+        const saved = localStorage.getItem('thamizhi-lang') || 'en';
+        function apply(lang) {
+          html.lang = lang === 'ta' ? 'ta' : 'en';
+          if (lang === 'ta') {
+            en.classList.add('text-muted-foreground/50');
+            en.classList.remove('text-foreground');
+            ta.classList.remove('text-muted-foreground/50');
+            ta.classList.add('text-foreground');
+          } else {
+            ta.classList.add('text-muted-foreground/50');
+            ta.classList.remove('text-foreground');
+            en.classList.remove('text-muted-foreground/50');
+            en.classList.add('text-foreground');
+          }
+          // Apply UI translations
+          if (window.__applyTranslations) window.__applyTranslations(lang);
+        }
+        apply(saved);
+        btn.addEventListener('click', () => {
+          const cur = localStorage.getItem('thamizhi-lang') || 'en';
+          const next = cur === 'en' ? 'ta' : 'en';
+          apply(next);
+          try { localStorage.setItem('thamizhi-lang', next); } catch {}
+        });
+      })();
+
       // ── Theme Toggle ──────────────────────────────────────────
       (function() {
         const html = document.documentElement;
@@ -202,6 +370,9 @@ const isArticle = type === 'article';
         function setTheme(isDark) {
           if (isDark) { html.classList.add('dark'); sunIcon?.classList.remove('hidden'); moonIcon?.classList.add('hidden'); }
           else { html.classList.remove('dark'); sunIcon?.classList.add('hidden'); moonIcon?.classList.remove('hidden'); }
+          // Trigger rotate animation
+          const icons = toggle.querySelectorAll('.theme-toggle-icon');
+          icons.forEach(icon => { icon.classList.add('rotated'); setTimeout(() => icon.classList.remove('rotated'), 350); });
         }
         setTheme(html.classList.contains('dark'));
         toggle.addEventListener('click', () => { const d = !html.classList.contains('dark'); setTheme(d); try { localStorage.setItem('thamizhi-theme', d ? 'dark' : 'light'); } catch {} });
@@ -272,20 +443,109 @@ const isArticle = type === 'article';
         });
       })();
 
-      // ── Mobile Menu Toggle ────────────────────────────────────
+      // ── Mobile Menu Toggle (slide transition) ────────────────
       (function() {
         const btn = document.getElementById('mobile-menu-toggle'), overlay = document.getElementById('mobile-category-overlay'), backdrop = document.getElementById('mobile-category-backdrop');
         if (!btn || !overlay || !backdrop) return;
-        btn.addEventListener('click', () => { overlay.classList.remove('hidden'); document.body.style.overflow = 'hidden'; });
-        backdrop.addEventListener('click', () => { overlay.classList.add('hidden'); document.body.style.overflow = ''; });
+        btn.addEventListener('click', () => { overlay.classList.add('open'); document.body.style.overflow = 'hidden'; });
+        backdrop.addEventListener('click', () => { overlay.classList.remove('open'); document.body.style.overflow = ''; });
       })();
 
-      // ── Mobile Chat Toggle ────────────────────────────────────
+      // ── Mobile Chat Toggle (slide transition) ────────────────
       (function() {
         const btn = document.getElementById('mobile-chat-toggle'), overlay = document.getElementById('mobile-chat-overlay'), backdrop = document.getElementById('mobile-chat-backdrop');
         if (!btn || !overlay || !backdrop) return;
-        btn.addEventListener('click', () => { overlay.classList.remove('hidden'); document.body.style.overflow = 'hidden'; });
-        backdrop.addEventListener('click', () => { overlay.classList.add('hidden'); document.body.style.overflow = ''; });
+        btn.addEventListener('click', () => { overlay.classList.add('open'); document.body.style.overflow = 'hidden'; });
+        backdrop.addEventListener('click', () => { overlay.classList.remove('open'); document.body.style.overflow = ''; });
+      })();
+
+      // ── Swipe to close mobile panels ─────────────────────────
+      (function() {
+        function makeSwipeable(overlayId, panelSelector, direction) {
+          const overlay = document.getElementById(overlayId);
+          const panel = overlay ? overlay.querySelector(panelSelector) : null;
+          if (!overlay || !panel) return;
+
+          var startX = 0, startY = 0, currentX = 0, isDragging = false;
+          var panelWidth = 0;
+          const THRESHOLD = 0.3; // close if dragged >30% of panel width
+
+          function close() {
+            overlay.classList.remove('open');
+            panel.style.transform = '';
+            panel.style.transition = '';
+            document.body.style.overflow = '';
+          }
+
+          function onStart(e) {
+            // Only respond to direct touches on the panel or its backdrop
+            var touch = e.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+            currentX = startX;
+            isDragging = false;
+            panelWidth = panel.offsetWidth;
+          }
+
+          function onMove(e) {
+            var touch = e.touches[0];
+            var dx = touch.clientX - startX;
+            var dy = touch.clientY - startY;
+
+            // Only initiate drag if horizontal movement is > vertical
+            if (!isDragging && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+            if (!isDragging && Math.abs(dy) > Math.abs(dx)) return;
+
+            e.preventDefault();
+            isDragging = true;
+            currentX = touch.clientX;
+
+            var delta = currentX - startX;
+            // For left panel: negative delta = swipe left (close direction), positive = resisted
+            // For right panel: positive delta = swipe right (close direction), negative = resisted
+            var translate = direction === 'left'
+              ? Math.min(delta, 0)  // left panel: allow negative deltas (swipe left = close)
+              : Math.max(delta, 0); // right panel: allow positive deltas (swipe right = close)
+
+            // Add resistance — harder to drag further
+            var resisted = translate * 0.4;
+            panel.style.transition = 'none';
+            panel.style.transform = 'translateX(' + resisted + 'px)';
+          }
+
+          function onEnd() {
+            if (!isDragging) return;
+            isDragging = false;
+
+            var delta = currentX - startX;
+            var absDelta = Math.abs(delta);
+            var shouldClose = absDelta > panelWidth * THRESHOLD || absDelta > 60;
+
+            if (shouldClose) {
+              // Animate off-screen then hide
+              var finalTranslate = direction === 'left'
+                ? -panelWidth + 'px'
+                : panelWidth + 'px';
+              panel.style.transition = 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
+              panel.style.transform = 'translateX(' + finalTranslate + ')';
+              setTimeout(close, 200);
+            } else {
+              // Snap back
+              panel.style.transition = 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)';
+              panel.style.transform = '';
+              setTimeout(function() {
+                panel.style.transition = '';
+              }, 300);
+            }
+          }
+
+          panel.addEventListener('touchstart', onStart, { passive: true });
+          panel.addEventListener('touchmove', onMove, { passive: false });
+          panel.addEventListener('touchend', onEnd);
+        }
+
+        makeSwipeable('mobile-category-overlay', '.mobile-panel-left', 'left');
+        makeSwipeable('mobile-chat-overlay', '.mobile-panel-right', 'right');
       })();
     </script>
   </body>
