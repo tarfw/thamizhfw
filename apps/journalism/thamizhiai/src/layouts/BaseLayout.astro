@@ -88,8 +88,8 @@ const isArticle = type === 'article';
       })} />
     )}
 
-    <script is:inline>
-      window.__i18n = JSON.parse('{JSON.stringify({ translations: TRANSLATIONS, categoryLabels: CATEGORY_LABELS, categoryDescriptions: CATEGORY_DESCRIPTIONS })}');
+    <script is:inline define:vars={{ i18nData: { translations: TRANSLATIONS, categoryLabels: CATEGORY_LABELS, categoryDescriptions: CATEGORY_DESCRIPTIONS } }}>
+      window.__i18n = i18nData;
       // ── Theme initialization ────────────────────────────────
       (function() {
         const saved = localStorage.getItem('thamizhi-theme');
@@ -290,15 +290,19 @@ const isArticle = type === 'article';
           </a>
         </div>
 
-        <!-- Center: copyright + language toggle → absolutely centered -->
+        <!-- Center: tagline + download app + language chip → absolutely centered -->
         <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 sm:gap-3 text-[10px] sm:text-[11px] text-muted-foreground/60">
-          <span data-i18n="ui.copyright">&copy; {new Date().getFullYear()} Thamizhi &middot; Open journalism</span>
+          <span class="hidden sm:inline">decentralized open journalism</span>
           <span class="w-px h-3 bg-border/60" aria-hidden="true"></span>
-          <button id="lang-toggle" class="flex items-center gap-1.5 font-medium tracking-wide hover:text-foreground transition-colors" data-i18n-aria="ui.switchLang" aria-label="Switch language" title="Switch language" type="button">
-            <span id="lang-en" class="uppercase text-foreground">EN</span>
-            <span class="text-muted-foreground/30 text-[9px]">/</span>
-            <span id="lang-ta" class="text-muted-foreground/50">த</span>
-          </button>
+          <a href="https://thamizh.app/" target="_blank" rel="noopener noreferrer" class="hidden sm:inline-flex h-6 px-2 rounded items-center text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+            Download App
+          </a>
+          <span class="w-px h-3 bg-border/60" aria-hidden="true"></span>
+          <!-- Language selection chip -->
+          <div id="lang-toggle" class="lang-chip flex items-center rounded-md border border-border/60 overflow-hidden" role="radiogroup" aria-label="Switch language" title="Switch language">
+            <button role="radio" aria-checked="true" id="lang-en" class="lang-chip-option px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-colors">EN</button>
+            <button role="radio" aria-checked="false" id="lang-ta" class="lang-chip-option px-2 py-0.5 text-[10px] font-semibold tracking-wide transition-colors">த</button>
+          </div>
         </div>
 
         <!-- Right: controls (pushed to far right) -->
@@ -327,36 +331,40 @@ const isArticle = type === 'article';
     </footer>
 
     <script is:inline>
-      // ── Language Toggle ───────────────────────────────────────
+      // ── Language Toggle (selection chip) ──────────────────────
       (function() {
-        const btn = document.getElementById('lang-toggle');
-        const en = document.getElementById('lang-en');
-        const ta = document.getElementById('lang-ta');
-        const html = document.documentElement;
-        if (!btn || !en || !ta) return;
-        const saved = localStorage.getItem('thamizhi-lang') || 'en';
+        var container = document.getElementById('lang-toggle');
+        var en = document.getElementById('lang-en');
+        var ta = document.getElementById('lang-ta');
+        var html = document.documentElement;
+        if (!container || !en || !ta) return;
+        var saved = localStorage.getItem('thamizhi-lang') || 'en';
         function apply(lang) {
           html.lang = lang === 'ta' ? 'ta' : 'en';
-          if (lang === 'ta') {
-            en.classList.add('text-muted-foreground/50');
-            en.classList.remove('text-foreground');
-            ta.classList.remove('text-muted-foreground/50');
-            ta.classList.add('text-foreground');
-          } else {
-            ta.classList.add('text-muted-foreground/50');
-            ta.classList.remove('text-foreground');
-            en.classList.remove('text-muted-foreground/50');
-            en.classList.add('text-foreground');
-          }
-          // Apply UI translations
+          var active = lang === 'ta' ? ta : en;
+          var inactive = lang === 'ta' ? en : ta;
+          active.setAttribute('aria-checked', 'true');
+          inactive.setAttribute('aria-checked', 'false');
+          active.classList.add('bg-foreground', 'text-background');
+          active.classList.remove('text-muted-foreground');
+          inactive.classList.remove('bg-foreground', 'text-background');
+          inactive.classList.add('text-muted-foreground');
           if (window.__applyTranslations) window.__applyTranslations(lang);
         }
         apply(saved);
-        btn.addEventListener('click', () => {
-          const cur = localStorage.getItem('thamizhi-lang') || 'en';
-          const next = cur === 'en' ? 'ta' : 'en';
+        function toggleLang() {
+          var cur = localStorage.getItem('thamizhi-lang') || 'en';
+          var next = cur === 'en' ? 'ta' : 'en';
           apply(next);
           try { localStorage.setItem('thamizhi-lang', next); } catch {}
+        };
+        en.addEventListener('click', function(e) {
+          var cur = localStorage.getItem('thamizhi-lang') || 'en';
+          if (cur !== 'en') toggleLang();
+        });
+        ta.addEventListener('click', function(e) {
+          var cur = localStorage.getItem('thamizhi-lang') || 'en';
+          if (cur !== 'ta') toggleLang();
         });
       })();
 

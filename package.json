@@ -4,7 +4,7 @@
   "workspaces": [
     "apps/*",
     "apps/journalism/expo-dashboard",
-    "apps/journalism/public-web",
+    "apps/journalism/thamizhiai",
     "web-frontends/*",
     "packages/*"
   ],

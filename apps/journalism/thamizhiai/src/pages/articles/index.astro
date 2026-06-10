@@ -1,0 +1,91 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getStorage } from '@tamilfw/core';
+import type { Article } from '@tamilfw/core/journalism';
+import { DOMAIN_INFO } from '../../lib/utils';
+
+const category = Astro.url.searchParams.get('category') || '';
+
+// Demo incident status mapping (will come from metadata after reseed)
+const INCIDENT_STATUS: Record<string, string> = {
+  'domestic-violence-tn-rise-2025': 'Reported',
+  'salem-acid-attack-survivor-justice': 'Trial Ongoing',
+  'tn-all-women-police-stations-impact': 'Reform Implemented',
+  'chennai-helpline-marital-rape-2025': 'Reported',
+  'tirunelveli-human-trafficking-bust': 'Case Filed',
+};
+
+function getIncidentStatus(article: Article): string {
+  return INCIDENT_STATUS[article.slug] || 'Reported';
+}
+function getStatusColor(status: string): string {
+  const map: Record<string, string> = {
+    'Reported': '#f59e0b',
+    'Investigation': '#3b82f6',
+    'Case Filed': '#f97316',
+    'Trial Ongoing': '#a855f7',
+    'Convicted': '#22c55e',
+    'Closed': '#6b7280',
+    'Reform Implemented': '#14b8a6',
+  };
+  return map[status] || '#6b7280';
+}
+
+let articles: Article[] = [];
+try {
+  const storage = getStorage();
+  const result = await storage.listArticles({
+    limit: 100,
+    offset: 0,
+    status: 'published',
+    sortBy: 'publishedAt',
+    sortOrder: 'desc',
+  });
+  articles = result.articles;
+
+  if (category) {
+    articles = articles.filter((a) => a.category === category);
+  }
+} catch (err) {
+  articles = [];
+}
+---
+
+<BaseLayout
+  title={category ? `${DOMAIN_INFO[category]?.label || category} Articles` : 'All Articles'}
+  description={`Browse ${category ? DOMAIN_INFO[category]?.label || category : 'all'} articles from Thamizhi.`}
+  currentCategory={category}
+>
+  <div class="px-6 py-6">
+    <h1 class="text-xl font-bold text-foreground mb-0.5" style="font-family: Georgia, 'Times New Roman', serif;">
+      <span data-i18n={category ? `cat.label.${category}` : 'ui.articles'}>{category ? DOMAIN_INFO[category]?.label || category : 'Articles'}</span>
+    </h1>
+    <p class="text-xs text-muted-foreground mb-4" data-article-count="{articles.length}">
+      {articles.length} article{articles.length !== 1 ? 's' : ''}
+    </p>
+
+    {articles.length === 0 ? (
+      <p class="text-sm text-muted-foreground py-10 text-center" data-i18n="ui.noArticlesCategory">No articles found in this category.</p>
+    ) : (
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 sm:gap-2">
+        {articles.map((article, i) => {
+          return (
+            <a href={`/articles/${article.slug}`} class:list={['block group rounded-sm overflow-hidden bg-muted', `fade-in fade-in-delay-${Math.min(i + 1, 5)}`]}>
+              <div class="relative aspect-square overflow-hidden">
+                <img src={`https://picsum.photos/seed/${article.slug}/400/400`} alt="" class="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                <!-- Title overlay at bottom -->
+                <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2.5 pt-6">
+                  <h3 class="text-[11px] sm:text-xs font-semibold text-white leading-snug line-clamp-2">{article.title}</h3>
+                  <div class="flex items-center justify-between mt-1">
+                    <span class="inline-block px-1.5 py-[1px] rounded-sm text-[8px] font-bold uppercase tracking-wider text-white" style="background-color: {getStatusColor(getIncidentStatus(article))}">{getIncidentStatus(article)}</span>
+                    <span class="text-[9px] text-white/60">{new Date(article.publishedAt!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                </div>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    )}
+  </div>
+</BaseLayout>
